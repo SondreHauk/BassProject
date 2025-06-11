@@ -1184,3 +1184,16 @@ java.lang.NullPointerException: Cannot invoke "javax.swing.JTextField.getText()"
 2025-06-11 08:32:30,621 [INFO] ApiDb:452 - User favorites Boards=[]
 2025-06-11 08:34:25,681 [INFO] WebApp:194 - Connection lost
 2025-06-11 08:34:25,805 [INFO] WebApp:191 - Connection restablished
+2025-06-11 08:58:03,180 [INFO] WebApp:194 - Connection lost
+2025-06-11 08:58:03,335 [INFO] WebApp:191 - Connection restablished
+2025-06-11 08:59:14,922 [INFO] Gpio:277 - dependency for GPIO []
+2025-06-11 09:00:08,206 [INFO] CtxDoc:743 - title: ADC1; link: Datasheet 
+2025-06-11 09:00:08,637 [INFO] ServerAccessManage:473 - Download File DS12110.pdf
+2025-06-11 09:00:11,733 [INFO] LoadUrlFilesThread:156 - End of LoadUrlFiles Thread
+2025-06-11 09:00:11,734 [INFO] CtxDocViewerPdf:144 - Open pdf file: C:/Users/sholte/STM32Cube/Repository/\DS12110.pdf in chapter: Analog to digital converters (ADCs)
+2025-06-11 09:00:12,216 [INFO] CtxDocViewerPdf:209 - item Analog-to-digital converters (ADCs) is on page 36
+2025-06-11 09:00:12,218 [INFO] CtxDocViewerPdf:239 - Opening file: C:/Users/sholte/STM32Cube/Repository/\DS12110.pdf at page: 36
+2025-06-11 09:03:06,677 [INFO] WebApp:194 - Connection lost
+2025-06-11 09:03:06,801 [INFO] WebApp:191 - Connection restablished
+2025-06-11 09:28:05,693 [INFO] WebApp:194 - Connection lost
+2025-06-11 09:28:05,827 [INFO] WebApp:191 - Connection restablished
