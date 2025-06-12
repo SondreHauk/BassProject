@@ -46,7 +46,7 @@ ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc1;
 
 /* USER CODE BEGIN PV */
-// uint16_t adc1_val, adc2_val;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -65,14 +65,6 @@ static void MX_ADC1_Init(void);
 uint16_t adc_data[NUM_CONVERSIONS];
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
 	printf("ADC 1: %u, ADC 2: %u\r\n",adc_data[0], adc_data[1]);
-	/*static uint8_t rank = 1;
-	if(rank == 1) {
-		adc1_val = HAL_ADC_GetValue(&hadc1);
-		rank = 2;
-	} else {
-		adc2_val = HAL_ADC_GetValue(&hadc1);
-		rank = 1;
-	}*/
 }
 /* USER CODE END 0 */
 
@@ -150,8 +142,6 @@ int main(void)
 	 /*HAL_ADC_Start(&hadc1);
 	 HAL_ADC_PollForConversion(&hadc1, HAL_MAX_DELAY);
 	 value_adc = HAL_ADC_GetValue(&hadc1); */
-
-
 
     /* USER CODE END WHILE */
 
