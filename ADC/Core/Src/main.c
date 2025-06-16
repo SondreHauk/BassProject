@@ -21,7 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -36,7 +36,9 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
+#define NUM_CONVERSIONS 2
+#define ADC_PORT &hadc1
+#define ADC_STAR &hadc3
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -52,8 +54,22 @@ DAC_HandleTypeDef hdac1;
 TIM_HandleTypeDef htim2;
 
 /* USER CODE BEGIN PV */
-uint32_t dac_val = 0;
+__IO bool adcPort_convCompleted = false;
+__IO bool adcStar_convCompleted = false;
+
 __IO uint32_t BspButtonState = BUTTON_RELEASED;
+
+Queue bufPort;
+Queue bufStar;
+
+uint32_t dac_val = 0;
+
+uint16_t adcPort_val[NUM_CONVERSIONS];
+uint16_t adcStar_val[NUM_CONVERSIONS];
+
+uint16_t dataPort; //Bad naming
+uint16_t dataStar; //Bad naming
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -72,26 +88,11 @@ static void MX_TIM2_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-#define NUM_CONVERSIONS 2
-#define ADC_PORT &hadc1
-#define ADC_STAR &hadc3
-
-typedef enum {
-	False = 0,
-	True  = 1
-} bool_t;
-
-__IO bool_t adcPort_convCompleted = False;
-__IO bool_t adcStar_convCompleted = False;
-
-uint16_t adcPort_val[NUM_CONVERSIONS];
-uint16_t adcStar_val[NUM_CONVERSIONS];
-
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
 	if (hadc == ADC_PORT){
-		adcPort_convCompleted = True;
+		adcPort_convCompleted = true;
 	} else if (hadc == ADC_STAR){
-		adcStar_convCompleted = True;
+		adcStar_convCompleted = true;
 	}
 }
 
@@ -111,7 +112,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14);
 	}
 }
-
 /* USER CODE END 0 */
 
 /**
@@ -134,7 +134,8 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
+  queue_init(&bufPort);
+  queue_init(&bufStar);
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -186,16 +187,20 @@ int main(void)
   while (1)
   {
     if(BspButtonState == BUTTON_PRESSED){
-    	printf("ADC 1.1: %5u, ADC 1.2: %5u, ADC 3.1: %5u, ADC 4.1: %5u\r\n", adcPort_val[0], adcPort_val[1], adcStar_val[0], adcStar_val[1]);
+    	printf("ADC P1: %5u, ADC P2: %5u, ADC S1: %5u, ADC S1: %5u\r\n", adcPort_val[0], adcPort_val[1], adcStar_val[0], adcStar_val[1]);
     	BspButtonState = BUTTON_RELEASED;
     }
     if(adcPort_convCompleted){
-    	adcPort_convCompleted = False;
-    	printf("Port conv completed\r\n");
+    	adcPort_convCompleted = false;
+    	queue_push(&bufPort, adcPort_val[0]);
+    	queue_pop(&bufPort, &dataPort);
+    	printf("Port1: %5u, Port2: %5u\r\n", dataPort[0], dataPort[1]);
     }
     if(adcStar_convCompleted){
-    	adcStar_convCompleted = False;
-    	printf("Star conv completed\r\n");
+    	adcStar_convCompleted = false;
+    	queue_push(&bufStar, adcStar_val[0]);
+    	queue_pop(&bufStar, &dataStar);
+    	printf("Star1: %5u, Star2: %5u\r\n", dataStar[0], dataStar[1]);
     }
   }
     /* USER CODE END WHILE */
@@ -248,7 +253,7 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.SYSCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_HCLK_DIV1;
   RCC_ClkInitStruct.APB3CLKDivider = RCC_APB3_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_APB1_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_APB1_DIV2;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_APB2_DIV1;
   RCC_ClkInitStruct.APB4CLKDivider = RCC_APB4_DIV1;
 
@@ -307,7 +312,7 @@ static void MX_ADC1_Init(void)
   */
   hadc1.Instance = ADC1;
   hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV32;
-  hadc1.Init.Resolution = ADC_RESOLUTION_16B;
+  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
   hadc1.Init.ScanConvMode = ADC_SCAN_ENABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   hadc1.Init.LowPowerAutoWait = DISABLE;
@@ -338,7 +343,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_3;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_32CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_16CYCLES_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
@@ -384,7 +389,7 @@ static void MX_ADC3_Init(void)
   */
   hadc3.Instance = ADC3;
   hadc3.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV32;
-  hadc3.Init.Resolution = ADC_RESOLUTION_16B;
+  hadc3.Init.Resolution = ADC_RESOLUTION_12B;
   hadc3.Init.ScanConvMode = ADC_SCAN_ENABLE;
   hadc3.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   hadc3.Init.LowPowerAutoWait = DISABLE;
@@ -407,7 +412,7 @@ static void MX_ADC3_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_0;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_32CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_16CYCLES_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
