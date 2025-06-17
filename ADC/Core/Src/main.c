@@ -21,7 +21,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdbool.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -36,7 +36,9 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-
+#define NUM_CONVERSIONS 2
+#define ADC_NCDT &hadc1
+#define ADC_LDT &hadc3
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -50,10 +52,27 @@ DMA_HandleTypeDef hdma_adc3;
 DAC_HandleTypeDef hdac1;
 
 TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim3;
+
+UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
-uint32_t dac_val = 0;
+__IO bool adcNCDT_scanCompleted = false;
+__IO bool adcLDT_scanCompleted = false;
+
 __IO uint32_t BspButtonState = BUTTON_RELEASED;
+
+Queue bufNCDT;
+
+uint32_t dacChan1 = 2000;
+uint32_t dacChan2 = 0;
+
+uint16_t adcNCDT_scan[NUM_CONVERSIONS];
+uint16_t adcLDT_scan[NUM_CONVERSIONS];
+
+uint16_t NCDT[NUM_CONVERSIONS];
+uint16_t LDT[NUM_CONVERSIONS];
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -66,42 +85,34 @@ static void MX_DAC1_Init(void);
 static void MX_ADC3_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_USART1_UART_Init(void);
+static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-#define NUM_CONVERSIONS 2
-#define ADC_PORT &hadc1
-#define ADC_STAR &hadc3
-
-typedef enum {
-	False = 0,
-	True  = 1
-} bool_t;
-
-__IO bool_t adcPort_convCompleted = False;
-__IO bool_t adcStar_convCompleted = False;
-
-uint16_t adcPort_val[NUM_CONVERSIONS];
-uint16_t adcStar_val[NUM_CONVERSIONS];
-
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
-	if (hadc == ADC_PORT){
-		adcPort_convCompleted = True;
-	} else if (hadc == ADC_STAR){
-		adcStar_convCompleted = True;
+	if (hadc == ADC_NCDT){
+		adcNCDT_scanCompleted = true;
+	} else if (hadc == ADC_LDT){
+		adcLDT_scanCompleted = true;
 	}
 }
 
 void BSP_PB_Callback(Button_TypeDef Button) {
   if (Button == BUTTON_USER) {
-    dac_val += 100;
-    if(dac_val > 4095){
-    	dac_val = 0;
+	dacChan1 += 100;
+    dacChan2 += 100;
+    if(dacChan1 > 4095){
+        	dacChan1 = 0;
+        }
+    if(dacChan2 > 4095){
+    	dacChan2 = 0;
     }
-    HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, dac_val);
+    HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_12B_R, dacChan1);
+    HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, dacChan2);
     BspButtonState = BUTTON_PRESSED;
   }
 }
@@ -109,9 +120,10 @@ void BSP_PB_Callback(Button_TypeDef Button) {
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 	if (htim == &htim2){
 		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14);
+	} else if (htim == &htim3){
+		HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
 	}
 }
-
 /* USER CODE END 0 */
 
 /**
@@ -134,7 +146,7 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-
+  queue_init(&bufNCDT);
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -154,17 +166,23 @@ int main(void)
   MX_ADC3_Init();
   MX_ADC1_Init();
   MX_TIM2_Init();
+  MX_USART1_UART_Init();
+  MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start_IT(&htim2);
+  HAL_TIM_Base_Start_IT(&htim3);
 
-  HAL_ADCEx_Calibration_Start(ADC_PORT, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
-  HAL_ADCEx_Calibration_Start(ADC_STAR, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
+  HAL_ADCEx_Calibration_Start(ADC_NCDT, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
+  HAL_ADCEx_Calibration_Start(ADC_LDT, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
 
-  HAL_ADC_Start_DMA(ADC_PORT,(uint32_t *)adcPort_val, NUM_CONVERSIONS);
-  HAL_ADC_Start_DMA(ADC_STAR,(uint32_t *)adcStar_val, NUM_CONVERSIONS);
+  HAL_ADC_Start_DMA(ADC_NCDT,(uint32_t *)adcNCDT_scan, NUM_CONVERSIONS);
+  HAL_ADC_Start_DMA(ADC_LDT,(uint32_t *)adcLDT_scan, NUM_CONVERSIONS);
 
+  HAL_DAC_Start(&hdac1, DAC_CHANNEL_1);
   HAL_DAC_Start(&hdac1, DAC_CHANNEL_2);
-  HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, dac_val);
+
+  HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_12B_R, dacChan1);
+  HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, dacChan2);
   /* USER CODE END 2 */
 
   /* Initialize USER push-button, will be used to trigger an interrupt each time it's pressed.*/
@@ -186,17 +204,31 @@ int main(void)
   while (1)
   {
     if(BspButtonState == BUTTON_PRESSED){
-    	printf("ADC 1.1: %5u, ADC 1.2: %5u, ADC 3.1: %5u, ADC 4.1: %5u\r\n", adcPort_val[0], adcPort_val[1], adcStar_val[0], adcStar_val[1]);
+    	// printf("ADC P1: %5u, ADC P2: %5u, ADC S1: %5u, ADC S1: %5u\r\n", adcNCDT_scan[0], adcNCDT_scan[1], adcLDT_scan[0], adcLDT_scan[1]);
     	BspButtonState = BUTTON_RELEASED;
     }
-    if(adcPort_convCompleted){
-    	adcPort_convCompleted = False;
-    	printf("Port conv completed\r\n");
+    if(adcNCDT_scanCompleted){
+    	adcNCDT_scanCompleted = false;
+    	queue_push(&bufNCDT, adcNCDT_scan);		// Push Laser values onto buffer
+    	if (queue_isFull(&bufNCDT)){
+    		queue_pop(&bufNCDT, NCDT);
+    		printf("NCDT PORT: %5u | NCDT STAR: %5u\r\n", NCDT[0], NCDT[1]);   // Send buffered Laser value using UART (RS-422)
+    	} else {
+    		printf("Waiting for buffer to fill up\r\n");
+    	}
+
     }
-    if(adcStar_convCompleted){
-    	adcStar_convCompleted = False;
-    	printf("Star conv completed\r\n");
-    }
+    /*if (adcLDT_scanCompleted){
+    	adcLDT_scanCompleted = false;
+    	queue_push(&bufNCDT_star, adcLDT_scan[0]);			// Push Laser value onto buffer
+    	printf("adcStar[1]: %5u\r\n", adcLDT_scan[1]); // Send LDT value (no buffering needed) using SSI (SPI)
+    	if (queue_isFull(&bufNCDT_star)){
+    		queue_pop(&bufNCDT_star, &NCDT_star);
+    		printf("adcStar[0]: %5u\r\n", NCDT_star);   // Send buffered Laser value using UART (RS-422)
+    	} else {
+    		printf("Waiting for buffer to fill up\r\n");
+    	}
+    }*/
   }
     /* USER CODE END WHILE */
 
@@ -248,8 +280,8 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.SYSCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_HCLK_DIV1;
   RCC_ClkInitStruct.APB3CLKDivider = RCC_APB3_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_APB1_DIV1;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_APB2_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_APB1_DIV2;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_APB2_DIV2;
   RCC_ClkInitStruct.APB4CLKDivider = RCC_APB4_DIV1;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
@@ -307,7 +339,7 @@ static void MX_ADC1_Init(void)
   */
   hadc1.Instance = ADC1;
   hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV32;
-  hadc1.Init.Resolution = ADC_RESOLUTION_16B;
+  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
   hadc1.Init.ScanConvMode = ADC_SCAN_ENABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   hadc1.Init.LowPowerAutoWait = DISABLE;
@@ -338,7 +370,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_3;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_32CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_16CYCLES_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
@@ -384,14 +416,14 @@ static void MX_ADC3_Init(void)
   */
   hadc3.Instance = ADC3;
   hadc3.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV32;
-  hadc3.Init.Resolution = ADC_RESOLUTION_16B;
+  hadc3.Init.Resolution = ADC_RESOLUTION_12B;
   hadc3.Init.ScanConvMode = ADC_SCAN_ENABLE;
   hadc3.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   hadc3.Init.LowPowerAutoWait = DISABLE;
   hadc3.Init.ContinuousConvMode = DISABLE;
   hadc3.Init.NbrOfConversion = 2;
   hadc3.Init.DiscontinuousConvMode = DISABLE;
-  hadc3.Init.ExternalTrigConv = ADC_EXTERNALTRIG_T2_TRGO;
+  hadc3.Init.ExternalTrigConv = ADC_EXTERNALTRIG_T3_TRGO;
   hadc3.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
   hadc3.Init.ConversionDataManagement = ADC_CONVERSIONDATA_DMA_CIRCULAR;
   hadc3.Init.Overrun = ADC_OVR_DATA_PRESERVED;
@@ -407,7 +439,7 @@ static void MX_ADC3_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_0;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_32CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_16CYCLES_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
@@ -457,13 +489,20 @@ static void MX_DAC1_Init(void)
     Error_Handler();
   }
 
-  /** DAC channel OUT2 config
+  /** DAC channel OUT1 config
   */
   sConfig.DAC_SampleAndHold = DAC_SAMPLEANDHOLD_DISABLE;
   sConfig.DAC_Trigger = DAC_TRIGGER_NONE;
   sConfig.DAC_OutputBuffer = DAC_OUTPUTBUFFER_ENABLE;
   sConfig.DAC_ConnectOnChipPeripheral = DAC_CHIPCONNECT_DISABLE;
   sConfig.DAC_UserTrimming = DAC_TRIMMING_FACTORY;
+  if (HAL_DAC_ConfigChannel(&hdac1, &sConfig, DAC_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** DAC channel OUT2 config
+  */
   if (HAL_DAC_ConfigChannel(&hdac1, &sConfig, DAC_CHANNEL_2) != HAL_OK)
   {
     Error_Handler();
@@ -516,6 +555,99 @@ static void MX_TIM2_Init(void)
   /* USER CODE BEGIN TIM2_Init 2 */
 
   /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 64-1;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 65536-1;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+
+  /* USER CODE END TIM3_Init 2 */
+
+}
+
+/**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 115200;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart1.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_HalfDuplex_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetTxFifoThreshold(&huart1, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetRxFifoThreshold(&huart1, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_DisableFifoMode(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
 
 }
 
