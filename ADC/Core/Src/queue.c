@@ -19,11 +19,12 @@ bool queue_isFull(Queue *q){
 	return false;
 }
 
-bool queue_push(Queue *q, uint16_t val_in[NUM_SCAN]) {
+bool queue_push(Queue *q, uint16_t val_in[NUM_CONVERSIONS]) {
     if (q->count == BUF_SIZE)
         return false;
-    q->buffer[q->head][0] = val_in[0];
-    q->buffer[q->head][1] = val_in[1];  // not modular! Use for-loop to modularise.
+    for(int i = 0; i < NUM_CONVERSIONS; i++){
+    	q->buffer[q->head][i] = val_in[i];
+    	}
     q->head = (q->head + 1) % BUF_SIZE;
     q->count++;
     return true;
