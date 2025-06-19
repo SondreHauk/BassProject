@@ -73,6 +73,10 @@ uint16_t adcLDT_scan[NUM_CONVERSIONS];
 uint16_t NCDT[NUM_CONVERSIONS];
 uint16_t LDT[NUM_CONVERSIONS];
 
+uint8_t l;
+uint8_t m;
+uint8_t h;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -134,7 +138,8 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
+  /*NCDT RS422 data formating and sending. See p.84 in optoNCDT 1420 data sheet*/
+  uint8_t NCDT_transmit_package[3];
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/
@@ -215,15 +220,25 @@ int main(void)
     }
     if(adcNCDT_scanCompleted){
     	adcNCDT_scanCompleted = false;
-    	queue_push(&bufNCDT, adcNCDT_scan);									 // Push Laser values onto buffer
+    	queue_push(&bufNCDT, adcNCDT_scan);
     	if (queue_isFull(&bufNCDT)){
     		queue_pop(&bufNCDT, NCDT);
-    		HAL_UART_Transmit(&huart2, (uint8_t *)NCDT, sizeof(NCDT), HAL_MAX_DELAY);
-    		printf("NCDT PORT: %5u | NCDT STAR: %5u\r\n", NCDT[0], NCDT[1]); // Send buffered Laser value using UART (RS-422)
+    		/*NCDT RS422 data formating and sending. See p.84 in optoNCDT 1420 data sheet*/
+    		for(int i; i < NUM_CONVERSIONS; i++){
+    		    NCDT_transmit_package[0] = (0b00 << 6) | ((NCDT[i] >> 0)  & 0x3F);   // Low byte
+    		    NCDT_transmit_package[1] = (0b01 << 6) | ((NCDT[i] >> 6)  & 0x3F);   // Mid byte
+    		    NCDT_transmit_package[2] = (0b10 << 6) | ((NCDT[i] >> 12) & 0x0F);   // High byte
+    		    HAL_UART_Transmit(&huart2, NCDT_transmit_package, 3, HAL_MAX_DELAY);
+    		}
+    		printf("NCDT PORT: %5u | NCDT STAR: %5u\r\n", NCDT[0], NCDT[1]);
     	} else {
     		printf("Waiting for buffer to fill up\r\n");
     	}
     }
+
+
+
+
     /*if (adcLDT_scanCompleted){
     	adcLDT_scanCompleted = false;
     	queue_push(&bufNCDT_star, adcLDT_scan[0]);			// Push Laser value onto buffer
@@ -625,7 +640,7 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
+  huart2.Init.BaudRate = 921600;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
