@@ -13,7 +13,7 @@
 
 #define BUF_SIZE 3
 #define NUM_CONVERSIONS 2
-#define NCDT_SAMPLE_FREQ 1
+#define NCDT_SAMPLE_FREQ 2000
 #define LDT_SAMPLE_FREQ 20 // Minimum 16
 
 #endif /* INC_CONFIG_H_ */

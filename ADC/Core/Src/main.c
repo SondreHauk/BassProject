@@ -126,6 +126,16 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14);
 	} else if (htim == &htim3){
 		HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
+		dacChan1 += 10;
+		dacChan2 += 10;
+	    if(dacChan1 > 4095){
+	    	dacChan1 = 0;
+		}
+		if(dacChan2 > 4095){
+		  	dacChan2 = 0;
+		}
+		HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_12B_R, dacChan1);
+	    HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, dacChan2);
 	}
 }
 /* USER CODE END 0 */
@@ -230,9 +240,10 @@ int main(void)
     		    NCDT_transmit_package[2] = (0b10 << 6) | ((NCDT[i] >> 12) & 0x0F);   // High byte
     		    HAL_UART_Transmit(&huart2, NCDT_transmit_package, 3, HAL_MAX_DELAY);
     		}
-    		printf("NCDT PORT: %5u | NCDT STAR: %5u\r\n", NCDT[0], NCDT[1]);
+    		//printf("NCDT PORT: %5u | NCDT STAR: %5u\r\n", NCDT[0], NCDT[1]);
+    		printf("%u\n", NCDT[0]);
     	} else {
-    		printf("Waiting for buffer to fill up\r\n");
+    		//printf("Waiting for buffer to fill up\r\n");
     	}
     }
 
