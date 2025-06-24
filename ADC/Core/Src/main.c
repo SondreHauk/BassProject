@@ -73,6 +73,10 @@ uint16_t adcLDT_scan[NUM_CONVERSIONS];
 uint16_t NCDT[NUM_CONVERSIONS];
 uint16_t LDT[NUM_CONVERSIONS];
 
+uint8_t l;
+uint8_t m;
+uint8_t h;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -122,6 +126,16 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14);
 	} else if (htim == &htim3){
 		HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
+		dacChan1 += 10;
+		dacChan2 += 10;
+	    if(dacChan1 > 4095){
+	    	dacChan1 = 0;
+		}
+		if(dacChan2 > 4095){
+		  	dacChan2 = 0;
+		}
+		HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_12B_R, dacChan1);
+	    HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, dacChan2);
 	}
 }
 /* USER CODE END 0 */
@@ -134,7 +148,8 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
+  /*NCDT RS422 data formating and sending. See p.84 in optoNCDT 1420 data sheet*/
+  uint8_t NCDT_transmit_package[3];
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/
@@ -215,15 +230,27 @@ int main(void)
     }
     if(adcNCDT_scanCompleted){
     	adcNCDT_scanCompleted = false;
-    	queue_push(&bufNCDT, adcNCDT_scan);									 // Push Laser values onto buffer
+    	queue_push(&bufNCDT, adcNCDT_scan);
     	if (queue_isFull(&bufNCDT)){
+    		//HAL_UART_Transmit(&huart2, 0b11100111, 1, HAL_MAX_DELAY);
     		queue_pop(&bufNCDT, NCDT);
-    		HAL_UART_Transmit(&huart2, (uint8_t *)NCDT, sizeof(NCDT), HAL_MAX_DELAY);
-    		printf("NCDT PORT: %5u | NCDT STAR: %5u\r\n", NCDT[0], NCDT[1]); // Send buffered Laser value using UART (RS-422)
+    		/*NCDT RS422 data formating and sending. See p.84 in optoNCDT 1420 data sheet*/
+    		for(int i = 0; i < 1; i++){
+    		    NCDT_transmit_package[0] = (0b00 << 6) | ((NCDT[i] >> 0)  & 0x3F);   // Low byte
+    		    NCDT_transmit_package[1] = (0b01 << 6) | ((NCDT[i] >> 6)  & 0x3F);   // Mid byte
+    		    NCDT_transmit_package[2] = (0b10 << 6) | ((NCDT[i] >> 12) & 0x0F);   // High byte
+    		    HAL_UART_Transmit(&huart2, NCDT_transmit_package, 3, HAL_MAX_DELAY);
+    		}
+    		//printf("NCDT PORT: %5u | NCDT STAR: %5u\r\n", NCDT[0], NCDT[1]);
+    		//printf("%u\n", NCDT[0]);
     	} else {
-    		printf("Waiting for buffer to fill up\r\n");
+    		//printf("Waiting for buffer to fill up\r\n");
     	}
     }
+
+
+
+
     /*if (adcLDT_scanCompleted){
     	adcLDT_scanCompleted = false;
     	queue_push(&bufNCDT_star, adcLDT_scan[0]);			// Push Laser value onto buffer
@@ -345,7 +372,7 @@ static void MX_ADC1_Init(void)
   */
   hadc1.Instance = ADC1;
   hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV32;
-  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.Resolution = ADC_RESOLUTION_16B;
   hadc1.Init.ScanConvMode = ADC_SCAN_ENABLE;
   hadc1.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   hadc1.Init.LowPowerAutoWait = DISABLE;
@@ -625,7 +652,7 @@ static void MX_USART2_UART_Init(void)
 
   /* USER CODE END USART2_Init 1 */
   huart2.Instance = USART2;
-  huart2.Init.BaudRate = 115200;
+  huart2.Init.BaudRate = 921600;
   huart2.Init.WordLength = UART_WORDLENGTH_8B;
   huart2.Init.StopBits = UART_STOPBITS_1;
   huart2.Init.Parity = UART_PARITY_NONE;
@@ -635,7 +662,7 @@ static void MX_USART2_UART_Init(void)
   huart2.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
   huart2.Init.ClockPrescaler = UART_PRESCALER_DIV1;
   huart2.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
-  if (HAL_RS485Ex_Init(&huart2, UART_DE_POLARITY_HIGH, 0, 0) != HAL_OK)
+  if (HAL_UART_Init(&huart2) != HAL_OK)
   {
     Error_Handler();
   }
