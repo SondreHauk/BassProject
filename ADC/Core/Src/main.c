@@ -39,6 +39,7 @@
 /* USER CODE BEGIN PM */
 #define ADC_NCDT &hadc1
 #define ADC_LDT &hadc3
+#define ADC_CLK_Hz 1000000
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -184,10 +185,10 @@ int main(void)
   MX_TIM3_Init();
   MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
-  htim2.Init.Period = 1000000 / NCDT_SAMPLE_FREQ; //magic number!
+  htim2.Init.Period = ADC_CLK_Hz / NCDT_SAMPLE_FREQ;
   HAL_TIM_Base_Init(&htim2);
 
-  htim3.Init.Period = 1000000 / LDT_SAMPLE_FREQ;
+  htim3.Init.Period = ADC_CLK_Hz / LDT_SAMPLE_FREQ;
   HAL_TIM_Base_Init(&htim3);
 
   HAL_TIM_Base_Start_IT(&htim2);
@@ -230,6 +231,17 @@ int main(void)
     }
     if(adcNCDT_scanCompleted){
     	adcNCDT_scanCompleted = false;
+    	/* Scale input signal!
+    	 * With 16 bit resolution
+    	 * 2^16 resolution --> 0V = 0, 3.3V = 2^16
+    	 * Have that: 1 LSB = 1 um in a range of 50 000 um
+    	 * --> 50 000 um is represented by 2^16 bit
+    	 * --> 1 LSB = 50 000 um / 2^16 = 0.76 um
+    	 * --> Multiply 2^16 bit value with 0.76 :^)
+    	 * */
+    	for(i = 0; i < NUM_CONVERSIONS; i++){
+    		adcNCDT_scan[i] = (int)(adcNCDT_scan[i] * NCDT_LSB_TO_um); // Truncates towards zero
+    	}
     	queue_push(&bufNCDT, adcNCDT_scan);
     	if (queue_isFull(&bufNCDT)){
     		//HAL_UART_Transmit(&huart2, 0b11100111, 1, HAL_MAX_DELAY);
