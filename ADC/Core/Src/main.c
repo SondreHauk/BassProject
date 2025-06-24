@@ -239,7 +239,7 @@ int main(void)
     	 * --> 1 LSB = 50 000 um / 2^16 = 0.76 um
     	 * --> Multiply 2^16 bit value with 0.76 :^)
     	 * */
-    	for(i = 0; i < NUM_CONVERSIONS; i++){
+    	for(int i = 0; i < NUM_CONVERSIONS; i++){
     		adcNCDT_scan[i] = (int)(adcNCDT_scan[i] * NCDT_LSB_TO_um); // Truncates towards zero
     	}
     	queue_push(&bufNCDT, adcNCDT_scan);
@@ -247,7 +247,7 @@ int main(void)
     		//HAL_UART_Transmit(&huart2, 0b11100111, 1, HAL_MAX_DELAY);
     		queue_pop(&bufNCDT, NCDT);
     		/*NCDT RS422 data formating and sending. See p.84 in optoNCDT 1420 data sheet*/
-    		for(int i = 0; i < 1; i++){
+    		for(int i = 0; i < 1; i++){ // NB!!! SET TO NUM_CONVERSIONS FOR BOTH PORT AND STAR
     		    NCDT_transmit_package[0] = (0b00 << 6) | ((NCDT[i] >> 0)  & 0x3F);   // Low byte
     		    NCDT_transmit_package[1] = (0b01 << 6) | ((NCDT[i] >> 6)  & 0x3F);   // Mid byte
     		    NCDT_transmit_package[2] = (0b10 << 6) | ((NCDT[i] >> 12) & 0x0F);   // High byte
