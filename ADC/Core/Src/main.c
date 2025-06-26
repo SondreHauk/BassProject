@@ -55,6 +55,7 @@ DAC_HandleTypeDef hdac1;
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 
+UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
@@ -96,6 +97,7 @@ static void MX_ADC1_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_USART2_UART_Init(void);
+static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -154,7 +156,7 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
   /*NCDT RS422 data formating and sending. See p.84 in optoNCDT 1420 data sheet*/
-  uint8_t NCDT_transmit_package[3];
+  uint8_t NCDT_transmit_package[6];
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/
@@ -188,6 +190,7 @@ int main(void)
   MX_TIM2_Init();
   MX_TIM3_Init();
   MX_USART2_UART_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
   htim2.Init.Period = ADC_CLK_Hz / NCDT_SAMPLE_FREQ;
   HAL_TIM_Base_Init(&htim2);
@@ -252,12 +255,16 @@ int main(void)
     		//HAL_UART_Transmit(&huart2, 0b11100111, 1, HAL_MAX_DELAY);
     		queue_pop(&bufNCDT, NCDT);
     		/*NCDT RS422 data formating and sending. See p.84 in optoNCDT 1420 data sheet*/
-    		for(int i = 0; i < 1; i++){ // NB!!! SET TO NUM_CONVERSIONS FOR BOTH PORT AND STAR
-    		    NCDT_transmit_package[0] = (0b00 << 6) | ((NCDT[i] >> 0)  & 0x3F);   // Low byte
-    		    NCDT_transmit_package[1] = (0b01 << 6) | ((NCDT[i] >> 6)  & 0x3F);   // Mid byte
-    		    NCDT_transmit_package[2] = (0b10 << 6) | ((NCDT[i] >> 12) & 0x0F);   // High byte
-    		    HAL_UART_Transmit(&huart2, NCDT_transmit_package, 3, HAL_MAX_DELAY);
-    		}
+    		NCDT_transmit_package[0] = (0b00 << 6) | ((NCDT[0] >> 0)  & 0x3F);   // Low byte
+    		NCDT_transmit_package[1] = (0b01 << 6) | ((NCDT[0] >> 6)  & 0x3F);   // Mid byte
+    		NCDT_transmit_package[2] = (0b10 << 6) | ((NCDT[0] >> 12) & 0x0F);   // High byte
+    	    HAL_UART_Transmit(&huart2, NCDT_transmit_package, 3, HAL_MAX_DELAY);
+
+   		    NCDT_transmit_package[3] = (0b00 << 6) | ((NCDT[1] >> 0)  & 0x3F);   // Low byte
+    		NCDT_transmit_package[4] = (0b01 << 6) | ((NCDT[1] >> 6)  & 0x3F);   // Mid byte
+    		NCDT_transmit_package[5] = (0b10 << 6) | ((NCDT[1] >> 12) & 0x0F);   // High byte
+    		HAL_UART_Transmit(&huart1, NCDT_transmit_package, 3, HAL_MAX_DELAY);
+
     		//printf("NCDT PORT: %5u | NCDT STAR: %5u\r\n", NCDT[0], NCDT[1]);
     		//printf("%u\n", NCDT[0]);
     	} else {
@@ -654,6 +661,54 @@ static void MX_TIM3_Init(void)
 }
 
 /**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 921600;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart1.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart1.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+  huart1.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetTxFifoThreshold(&huart1, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetRxFifoThreshold(&huart1, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_DisableFifoMode(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
+
+}
+
+/**
   * @brief USART2 Initialization Function
   * @param None
   * @retval None
@@ -752,14 +807,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(LD3_GPIO_Port, &GPIO_InitStruct);
-
-  /*Configure GPIO pin : PB6 */
-  GPIO_InitStruct.Pin = GPIO_PIN_6;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LD2_Pin */
   GPIO_InitStruct.Pin = LD2_Pin;
