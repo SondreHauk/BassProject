@@ -74,6 +74,10 @@ uint16_t adcLDT_scan[NUM_CONVERSIONS];
 uint16_t NCDT[NUM_CONVERSIONS];
 uint16_t LDT[NUM_CONVERSIONS];
 
+const float NCDT_voltage_scaling = 3.3f / 3.06f;
+const float NCDT_voltage_offset = (0.20f / 3.3f) * 65536.0f;
+const float NCDT_lsb_to_um = 50000.0f / 65536.0f;
+
 uint8_t l;
 uint8_t m;
 uint8_t h;
@@ -231,18 +235,19 @@ int main(void)
     }
     if(adcNCDT_scanCompleted){
     	adcNCDT_scanCompleted = false;
-    	/* Scale input signal!
-    	 * With 16 bit resolution
-    	 * 2^16 resolution --> 0V = 0, 3.3V = 2^16
-    	 * Have that: 1 LSB = 1 um in a range of 50 000 um
-    	 * --> 50 000 um is represented by 2^16 bit
-    	 * --> 1 LSB = 50 000 um / 2^16 = 0.76 um
-    	 * --> Multiply 2^16 bit value with 0.76 :^)
-    	 * */
+
     	for(int i = 0; i < NUM_CONVERSIONS; i++){
-    		adcNCDT_scan[i] = (int)(adcNCDT_scan[i] * NCDT_LSB_TO_um); // Truncates towards zero
+    		float cond = (adcNCDT_scan[i] - NCDT_voltage_offset) * NCDT_voltage_scaling * NCDT_lsb_to_um;
+    		if (cond < 0.0f){
+    			cond = 0.0f;
+    		} else if (cond > 65535.0f) {
+    			cond = 65535.0f;
+    		}
+    		adcNCDT_scan[i] = (uint16_t)cond;
     	}
+
     	queue_push(&bufNCDT, adcNCDT_scan);
+
     	if (queue_isFull(&bufNCDT)){
     		//HAL_UART_Transmit(&huart2, 0b11100111, 1, HAL_MAX_DELAY);
     		queue_pop(&bufNCDT, NCDT);

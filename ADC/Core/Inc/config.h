@@ -13,7 +13,6 @@
 #define BUF_SIZE 3
 #define NUM_CONVERSIONS 2
 #define NCDT_SAMPLE_FREQ 8000
-#define LDT_SAMPLE_FREQ 1000 		          // Minimum 16
-#define NCDT_LSB_TO_um (50000.0f / 65536.0f)  // 50000um on 16 bit resolution
+#define LDT_SAMPLE_FREQ 1000 // Minimum 16
 
 #endif /* INC_CONFIG_H_ */
