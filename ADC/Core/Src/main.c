@@ -75,7 +75,7 @@ uint16_t adcLDT_scan[NUM_CONVERSIONS];
 uint16_t NCDT[NUM_CONVERSIONS];
 uint16_t LDT[NUM_CONVERSIONS];
 
-const float NCDT_voltage_scaling = 3.3f / 3.06f;
+const float NCDT_voltage_scaling = 3.3f / 3.03f;
 const float NCDT_voltage_offset = (0.20f / 3.3f) * 65536.0f;
 const float NCDT_lsb_to_um = 50000.0f / 65536.0f;
 
@@ -156,7 +156,8 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
   /*NCDT RS422 data formating and sending. See p.84 in optoNCDT 1420 data sheet*/
-  uint8_t NCDT_transmit_package[6];
+  uint8_t NCDT_port_TX_package[3];
+  uint8_t NCDT_star_TX_package[3];
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/
@@ -233,7 +234,6 @@ int main(void)
   while (1)
   {
     if(BspButtonState == BUTTON_PRESSED){
-    	// printf("ADC P1: %5u, ADC P2: %5u, ADC S1: %5u, ADC S1: %5u\r\n", adcNCDT_scan[0], adcNCDT_scan[1], adcLDT_scan[0], adcLDT_scan[1]);
     	BspButtonState = BUTTON_RELEASED;
     }
     if(adcNCDT_scanCompleted){
@@ -243,8 +243,8 @@ int main(void)
     		float cond = (adcNCDT_scan[i] - NCDT_voltage_offset) * NCDT_voltage_scaling * NCDT_lsb_to_um;
     		if (cond < 0.0f){
     			cond = 0.0f;
-    		} else if (cond > 65535.0f) {
-    			cond = 65535.0f;
+    		} else if (cond > 50000.0f) {
+    			cond = 50000.0f;
     		}
     		adcNCDT_scan[i] = (uint16_t)cond;
     	}
@@ -252,28 +252,24 @@ int main(void)
     	queue_push(&bufNCDT, adcNCDT_scan);
 
     	if (queue_isFull(&bufNCDT)){
-    		//HAL_UART_Transmit(&huart2, 0b11100111, 1, HAL_MAX_DELAY);
+
     		queue_pop(&bufNCDT, NCDT);
+
     		/*NCDT RS422 data formating and sending. See p.84 in optoNCDT 1420 data sheet*/
-    		NCDT_transmit_package[0] = (0b00 << 6) | ((NCDT[0] >> 0)  & 0x3F);   // Low byte
-    		NCDT_transmit_package[1] = (0b01 << 6) | ((NCDT[0] >> 6)  & 0x3F);   // Mid byte
-    		NCDT_transmit_package[2] = (0b10 << 6) | ((NCDT[0] >> 12) & 0x0F);   // High byte
-    	    HAL_UART_Transmit(&huart2, NCDT_transmit_package, 3, HAL_MAX_DELAY);
+    		NCDT_port_TX_package[0] = (0b00 << 6) | ((NCDT[0] >> 0)  & 0x3F);   // Low byte
+    		NCDT_port_TX_package[1] = (0b01 << 6) | ((NCDT[0] >> 6)  & 0x3F);   // Mid byte
+    		NCDT_port_TX_package[2] = (0b10 << 6) | ((NCDT[0] >> 12) & 0x0F);   // High byte
+    	    HAL_UART_Transmit(&huart2, NCDT_port_TX_package, 3, HAL_MAX_DELAY);
 
-   		    NCDT_transmit_package[3] = (0b00 << 6) | ((NCDT[1] >> 0)  & 0x3F);   // Low byte
-    		NCDT_transmit_package[4] = (0b01 << 6) | ((NCDT[1] >> 6)  & 0x3F);   // Mid byte
-    		NCDT_transmit_package[5] = (0b10 << 6) | ((NCDT[1] >> 12) & 0x0F);   // High byte
-    		HAL_UART_Transmit(&huart1, NCDT_transmit_package, 3, HAL_MAX_DELAY);
+    	    NCDT_star_TX_package[0] = (0b00 << 6) | ((NCDT[1] >> 0)  & 0x3F);   // Low byte
+    	    NCDT_star_TX_package[1] = (0b01 << 6) | ((NCDT[1] >> 6)  & 0x3F);   // Mid byte
+    	    NCDT_star_TX_package[2] = (0b10 << 6) | ((NCDT[1] >> 12) & 0x0F);   // High byte
+    		HAL_UART_Transmit(&huart1, NCDT_star_TX_package, 3, HAL_MAX_DELAY);
 
-    		//printf("NCDT PORT: %5u | NCDT STAR: %5u\r\n", NCDT[0], NCDT[1]);
-    		//printf("%u\n", NCDT[0]);
     	} else {
     		//printf("Waiting for buffer to fill up\r\n");
     	}
     }
-
-
-
 
     /*if (adcLDT_scanCompleted){
     	adcLDT_scanCompleted = false;
@@ -427,7 +423,7 @@ static void MX_ADC1_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_3;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_16CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_32CYCLES_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
@@ -473,7 +469,7 @@ static void MX_ADC3_Init(void)
   */
   hadc3.Instance = ADC3;
   hadc3.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV32;
-  hadc3.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc3.Init.Resolution = ADC_RESOLUTION_16B;
   hadc3.Init.ScanConvMode = ADC_SCAN_ENABLE;
   hadc3.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   hadc3.Init.LowPowerAutoWait = DISABLE;
@@ -496,7 +492,7 @@ static void MX_ADC3_Init(void)
   */
   sConfig.Channel = ADC_CHANNEL_0;
   sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_16CYCLES_5;
+  sConfig.SamplingTime = ADC_SAMPLETIME_32CYCLES_5;
   sConfig.SingleDiff = ADC_SINGLE_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
