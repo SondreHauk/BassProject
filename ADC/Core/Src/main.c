@@ -77,9 +77,12 @@ uint16_t NCDT_port[NUM_CONVERSIONS];
 uint16_t NCDT_star[NUM_CONVERSIONS];
 uint16_t LDT[NUM_CONVERSIONS];
 
-const float NCDT_voltage_scaling = 6.6f / 6.3f;
-const float NCDT_voltage_offset = (0.075f / 3.3f) * 65536.0f;
-const float NCDT_lsb_to_um = 50000.0f / 65536.0f;
+const float NCDT_voltage_scaling = 6.6f / 5.480f;
+const float NCDT_voltage_offset = (0.01024f / 6.6f) * 65536.0f;
+//const float NCDT_nominal_val = 50000.f;
+//const float NCDT_lsb_to_um = 100000.0f / 65536.0f;
+
+const float MR = 100.0f; // measuring range 100 mm
 
 uint8_t l;
 uint8_t m;
@@ -242,13 +245,20 @@ int main(void)
     	NCDT_port_scanCompleted = false;
 
     	for(int i = 0; i < NUM_CONVERSIONS; i++){
-    		float cond = (NCDT_port_scan[i] - NCDT_voltage_offset) * NCDT_voltage_scaling * NCDT_lsb_to_um;
-    		if (cond < 0.0f){
-    			cond = 0.0f;
-    		} else if (cond > 50000.0f) {
-    			cond = 50000.0f;
+    	//	float cond = (NCDT_port_scan[i] - NCDT_voltage_offset) * NCDT_voltage_scaling * NCDT_lsb_to_um - 50000.0f;
+    		float x = NCDT_port_scan[i] * NCDT_voltage_scaling - NCDT_voltage_offset;
+    		float d = 1.0f/100.0f * ((102.0f / 65520.0f) * x - 1.0f) * MR;
+
+    	//	if (cond < 0.0f){
+    	//		cond = 0.0f;
+    	//	} else if (cond > 50000.0f) {
+    	//		cond = 50000.0f;
+    	//	}
+    		if (d < 0){
+    			d = 0;
     		}
-    		NCDT_port_scan[i] = (uint16_t)cond;
+
+    		NCDT_port_scan[i] = (uint16_t)d;
     	}
 
     	queue_push(&NCDT_port_buf, NCDT_port_scan);
@@ -271,7 +281,7 @@ int main(void)
     if (NCDT_star_scanCompleted) {
     	NCDT_star_scanCompleted = false;
 
-    	for(int i = 0; i < NUM_CONVERSIONS; i++){
+    	/*for(int i = 0; i < NUM_CONVERSIONS; i++){
     		float cond = (NCDT_star_scan[i] - NCDT_voltage_offset) * NCDT_voltage_scaling * NCDT_lsb_to_um;
     		if (cond < 0.0f){
     			cond = 0.0f;
@@ -279,7 +289,7 @@ int main(void)
     			cond = 50000.0f;
     		}
     		NCDT_star_scan[i] = (uint16_t)cond;
-    	}
+    	}*/
 
     	queue_push(&NCDT_star_buf, NCDT_star_scan);
 
