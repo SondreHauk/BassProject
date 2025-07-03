@@ -77,12 +77,39 @@ uint16_t NCDT_port[NUM_CONVERSIONS];
 uint16_t NCDT_star[NUM_CONVERSIONS];
 uint16_t LDT[NUM_CONVERSIONS];
 
-const float NCDT_voltage_scaling = 6.6f / 5.480f;
-const float NCDT_voltage_offset = (0.01024f / 6.6f) * 65536.0f;
-//const float NCDT_nominal_val = 50000.f;
-//const float NCDT_lsb_to_um = 100000.0f / 65536.0f;
+/*
+ * The following constants are derived empirically by comparing
+ * the raw data from the signal converter (y_min and y_max) to the
+ * raw data from the MCU ADC (x_min and x_max) on the xRAD from CALIBRATION on GUI.
+ * Linear scaling formula is then applied to these values:
+ *
+ * 					(x - x_min)(y_max - y_min)
+ * 		x = y_min + ---------------------------
+ * 		   				x_max - x_min
+ *
+ * This is a an ad hoc solution which is susceptible to change over time,
+ * as the x/y_max and x/y_min values drift a bit.
+ * Should be derived theoretically by analysing the voltage input to ADC (good luck)?
+ *
+ * The distance d [mm] is calculated by the controller as:
+ *
+ * 			 1       102*x
+ * 		d = --- * (-------- - 51) * MR
+ * 			100		65520
+ *
+ * 	See page 84 in NCDT-1420 data sheet for details.
+ */
 
-const float MR = 100.0f; // measuring range 100 mm
+const float x_min = 23000.0f; //23000.0f;
+const float x_max = 46500.0f; //46500.0f;
+const float y_min = 25562.0f; //26400.0f;
+const float y_max = 39566.0f; //39550.0f; //38750.0f;
+
+//const float NCDT_voltage_scaling = 14.0f / 23.0f; //(6.6f / 5.480f);
+//const float NCDT_voltage_offset = 10500.0f;//(0.2f / 6.6f) * 65536.0f;
+//const float NCDT_nominal_val = 50000.f;
+//const float NCDT_lsb_to_um = 50000.0f / 65536.0f;
+//const float MR = 200.0f; // measuring range 100 mm
 
 uint8_t l;
 uint8_t m;
@@ -245,20 +272,20 @@ int main(void)
     	NCDT_port_scanCompleted = false;
 
     	for(int i = 0; i < NUM_CONVERSIONS; i++){
-    	//	float cond = (NCDT_port_scan[i] - NCDT_voltage_offset) * NCDT_voltage_scaling * NCDT_lsb_to_um - 50000.0f;
-    		float x = NCDT_port_scan[i] * NCDT_voltage_scaling - NCDT_voltage_offset;
-    		float d = 1.0f/100.0f * ((102.0f / 65520.0f) * x - 1.0f) * MR;
+
+    		float x = y_min + ((NCDT_port_scan[i] - x_min) * (y_max - y_min)) / (x_max - x_min);
+
+    	//	float cond = NCDT_port_scan[i] * NCDT_voltage_scaling + NCDT_voltage_offset; //* NCDT_lsb_to_um
+    	//	float x = NCDT_port_scan[i] * NCDT_voltage_scaling - NCDT_voltage_offset;
+    	//	float d = (1.0f/100.0f) * ((102.0f / 65520.0f) * x - 51.0f) * MR;
 
     	//	if (cond < 0.0f){
     	//		cond = 0.0f;
     	//	} else if (cond > 50000.0f) {
     	//		cond = 50000.0f;
     	//	}
-    		if (d < 0){
-    			d = 0;
-    		}
 
-    		NCDT_port_scan[i] = (uint16_t)d;
+    		NCDT_port_scan[i] = (uint16_t)x; //check for overflow?
     	}
 
     	queue_push(&NCDT_port_buf, NCDT_port_scan);
