@@ -78,38 +78,52 @@ uint16_t NCDT_star[NUM_CONVERSIONS];
 uint16_t LDT[NUM_CONVERSIONS];
 
 /*
+ * The following constants are derived by analysing the ADC response to a
+ * 10Vpp input signal. To simulate the sensor, the first 643 ADC values are reserved,
+ * as well as the last 649 values (reflected in y_max and y_min).
+ *
+ * With no conditioning:
+ * +10V = x_max = 63000 and -10V = x_min = 8250
+ *
+ * With conditioning, using formula (1):
+ * +10V = ~64000 and -10V = ~1000
+ *
+ * x_min = 8250.0f;
+ * x_max = 63000.0f;
+ * y_min = 643.0f;
+ * y_max = 64887.0f;
+ *
+ * Comparing this with xRad starboard values, it is not equal at all, which leads me to
+ * assume that the signal input to xRad starboard is conditioned in some way unknown at
+ * time of writing. Fixed by comparing empirically:
+ */
+
+/*
  * The following constants are derived empirically by comparing
  * the raw data from the signal converter (y_min and y_max) to the
  * raw data from the MCU ADC (x_min and x_max) on the xRAD from CALIBRATION on GUI.
  * Linear scaling formula is then applied to these values:
  *
  * 					(x - x_min)(y_max - y_min)
- * 		x = y_min + ---------------------------
- * 		   				x_max - x_min
+ * 		x = y_min + ---------------------------       (1)
+ * 		   				  x_max - x_min
  *
  * This is a an ad hoc solution which is susceptible to change over time,
  * as the x/y_max and x/y_min values drift a bit.
- * Should be derived theoretically by analysing the voltage input to ADC (good luck)?
  *
  * The distance d [mm] is calculated by the controller as:
  *
  * 			 1       102*x
- * 		d = --- * (-------- - 51) * MR
+ * 		d = --- * (-------- - 51) * MR                 (2)
  * 			100		65520
  *
- * 	See page 84 in NCDT-1420 data sheet for details.
+ * 	See page 87 in NCDT-1420 data sheet for details.
  */
 
-const float x_min = 23000.0f; //23000.0f;
-const float x_max = 46500.0f; //46500.0f;
-const float y_min = 25562.0f; //26400.0f;
-const float y_max = 39566.0f; //39550.0f; //38750.0f;
-
-//const float NCDT_voltage_scaling = 14.0f / 23.0f; //(6.6f / 5.480f);
-//const float NCDT_voltage_offset = 10500.0f;//(0.2f / 6.6f) * 65536.0f;
-//const float NCDT_nominal_val = 50000.f;
-//const float NCDT_lsb_to_um = 50000.0f / 65536.0f;
-//const float MR = 200.0f; // measuring range 100 mm
+const float x_min = 23000.0f;
+const float x_max = 46500.0f;
+const float y_min = 25562.0f;
+const float y_max = 39550.0f;
 
 uint8_t l;
 uint8_t m;
@@ -275,17 +289,13 @@ int main(void)
 
     		float x = y_min + ((NCDT_port_scan[i] - x_min) * (y_max - y_min)) / (x_max - x_min);
 
-    	//	float cond = NCDT_port_scan[i] * NCDT_voltage_scaling + NCDT_voltage_offset; //* NCDT_lsb_to_um
-    	//	float x = NCDT_port_scan[i] * NCDT_voltage_scaling - NCDT_voltage_offset;
-    	//	float d = (1.0f/100.0f) * ((102.0f / 65520.0f) * x - 51.0f) * MR;
+    		if (x < 0.0f){
+    			x = 0.0f;
+    		} else if (x > 65536.0f) {
+    			x = 65536;
+    		}
 
-    	//	if (cond < 0.0f){
-    	//		cond = 0.0f;
-    	//	} else if (cond > 50000.0f) {
-    	//		cond = 50000.0f;
-    	//	}
-
-    		NCDT_port_scan[i] = (uint16_t)x; //check for overflow?
+    		NCDT_port_scan[i] = (uint16_t)x;
     	}
 
     	queue_push(&NCDT_port_buf, NCDT_port_scan);
@@ -308,15 +318,17 @@ int main(void)
     if (NCDT_star_scanCompleted) {
     	NCDT_star_scanCompleted = false;
 
-    	/*for(int i = 0; i < NUM_CONVERSIONS; i++){
-    		float cond = (NCDT_star_scan[i] - NCDT_voltage_offset) * NCDT_voltage_scaling * NCDT_lsb_to_um;
-    		if (cond < 0.0f){
-    			cond = 0.0f;
-    		} else if (cond > 50000.0f) {
-    			cond = 50000.0f;
+    	for(int i = 0; i < NUM_CONVERSIONS; i++){
+    		float x = y_min + ((NCDT_star_scan[i] - x_min) * (y_max - y_min)) / (x_max - x_min);
+
+    		if (x < 0.0f){
+    			x = 0.0f;
+    		} else if (x > 65536.0f) {
+    			x = 65536;
     		}
-    		NCDT_star_scan[i] = (uint16_t)cond;
-    	}*/
+
+    		NCDT_star_scan[i] = (uint16_t)x;
+    	}
 
     	queue_push(&NCDT_star_buf, NCDT_star_scan);
 

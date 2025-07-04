@@ -4,7 +4,6 @@
  *  Created on: Jun 18, 2025
  *      Author: sholte
  *
- *
  */
 
 #ifndef INC_CONFIG_H_
