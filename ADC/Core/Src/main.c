@@ -50,8 +50,6 @@ ADC_HandleTypeDef hadc3;
 DMA_HandleTypeDef hdma_adc1;
 DMA_HandleTypeDef hdma_adc3;
 
-DAC_HandleTypeDef hdac1;
-
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 
@@ -66,9 +64,6 @@ __IO uint32_t BspButtonState = BUTTON_RELEASED;
 
 Queue NCDT_port_buf;
 Queue NCDT_star_buf;
-
-uint32_t dacChan1 = 2000; // starting value
-uint32_t dacChan2 = 0;    // starting value
 
 uint16_t NCDT_port_scan[NUM_CONVERSIONS];
 uint16_t NCDT_star_scan[NUM_CONVERSIONS];
@@ -88,11 +83,13 @@ uint16_t LDT[NUM_CONVERSIONS];
  * With conditioning, using formula (1):
  * +10V = ~64000 and -10V = ~1000
  *
- * x_min = 8250.0f;
- * x_max = 63000.0f;
- * y_min = 643.0f;
- * y_max = 64887.0f;
- *
+ */
+const float x_min = 8250.0f;
+const float x_max = 63000.0f;
+const float y_min = 0.0f;//643.0f;
+const float y_max = 65536.0f;//64887.0f;
+const float meas_ratio = 0.5; // ADC has full scale 100 mm, laser has full scale 200 mm
+ /*
  * Comparing this with xRad starboard values, it is not equal at all, which leads me to
  * assume that the signal input to xRad starboard is conditioned in some way unknown at
  * time of writing. Fixed by comparing empirically:
@@ -120,14 +117,12 @@ uint16_t LDT[NUM_CONVERSIONS];
  * 	See page 87 in NCDT-1420 data sheet for details.
  */
 
+/*
 const float x_min = 23000.0f;
 const float x_max = 46500.0f;
 const float y_min = 25800.0f; // original value: 25562
 const float y_max = 39550.0f;
-
-uint8_t l;
-uint8_t m;
-uint8_t h;
+*/
 
 /* USER CODE END PV */
 
@@ -137,7 +132,6 @@ void PeriphCommonClock_Config(void);
 static void MPU_Config(void);
 static void MX_DMA_Init(void);
 static void MX_GPIO_Init(void);
-static void MX_DAC1_Init(void);
 static void MX_ADC3_Init(void);
 static void MX_ADC1_Init(void);
 static void MX_TIM2_Init(void);
@@ -160,16 +154,6 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
 
 void BSP_PB_Callback(Button_TypeDef Button) {
   if (Button == BUTTON_USER) {
-	dacChan1 += 100;
-    dacChan2 += 100;
-    if(dacChan1 > 4095){
-        	dacChan1 = 0;
-        }
-    if(dacChan2 > 4095){
-    	dacChan2 = 0;
-    }
-    HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_12B_R, dacChan1);
-    HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, dacChan2);
     BspButtonState = BUTTON_PRESSED;
   }
 }
@@ -179,16 +163,6 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14);
 	} else if (htim == &htim3){
 		HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
-		dacChan1 += 10;
-		dacChan2 += 10;
-	    if(dacChan1 > 4095){
-	    	dacChan1 = 0;
-		}
-		if(dacChan2 > 4095){
-		  	dacChan2 = 0;
-		}
-		HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_12B_R, dacChan1);
-	    HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, dacChan2);
 	}
 }
 /* USER CODE END 0 */
@@ -231,7 +205,6 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_DMA_Init();
   MX_GPIO_Init();
-  MX_DAC1_Init();
   MX_ADC3_Init();
   MX_ADC1_Init();
   MX_TIM2_Init();
@@ -253,12 +226,6 @@ int main(void)
 
   HAL_ADC_Start_DMA(ADC_NCDT_port,(uint32_t *)NCDT_port_scan, NUM_CONVERSIONS);
   HAL_ADC_Start_DMA(ADC_NCDT_star,(uint32_t *)NCDT_star_scan, NUM_CONVERSIONS);
-
-  HAL_DAC_Start(&hdac1, DAC_CHANNEL_1);
-  HAL_DAC_Start(&hdac1, DAC_CHANNEL_2);
-
-  HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_1, DAC_ALIGN_12B_R, dacChan1);
-  HAL_DAC_SetValue(&hdac1, DAC_CHANNEL_2, DAC_ALIGN_12B_R, dacChan2);
   /* USER CODE END 2 */
 
   /* Initialize USER push-button, will be used to trigger an interrupt each time it's pressed.*/
@@ -287,21 +254,17 @@ int main(void)
 
     	for(int i = 0; i < NUM_CONVERSIONS; i++){
 
-    		float x = y_min + ((NCDT_port_scan[i] - x_min) * (y_max - y_min)) / (x_max - x_min);
-
+    		float x = (y_min + ((NCDT_port_scan[i] - x_min) * (y_max - y_min)) / (x_max - x_min))*meas_ratio;
     		if (x < 0.0f){
     			x = 0.0f;
     		} else if (x > 65536.0f) {
     			x = 65536;
     		}
-
     		NCDT_port_scan[i] = (uint16_t)x;
     	}
 
     	queue_push(&NCDT_port_buf, NCDT_port_scan);
-
     	if (queue_isFull(&NCDT_port_buf)){
-
     		queue_pop(&NCDT_port_buf, NCDT_port);
 
     		/*NCDT RS422 data formating and sending. See p.84 in optoNCDT 1420 data sheet*/
@@ -311,7 +274,7 @@ int main(void)
     	    HAL_UART_Transmit(&huart2, NCDT_port_TX_package, 3, HAL_MAX_DELAY);
 
     	} else {
-    		//printf("Waiting for buffer to fill up\r\n");
+    		/* Waiting for buffer to fill up */
     	}
     }
 
@@ -319,19 +282,16 @@ int main(void)
     	NCDT_star_scanCompleted = false;
 
     	for(int i = 0; i < NUM_CONVERSIONS; i++){
-    		float x = y_min + ((NCDT_star_scan[i] - x_min) * (y_max - y_min)) / (x_max - x_min);
-
+    		float x = (y_min + ((NCDT_star_scan[i] - x_min) * (y_max - y_min)) / (x_max - x_min))*meas_ratio;
     		if (x < 0.0f){
     			x = 0.0f;
     		} else if (x > 65536.0f) {
     			x = 65536;
     		}
-
     		NCDT_star_scan[i] = (uint16_t)x;
     	}
 
     	queue_push(&NCDT_star_buf, NCDT_star_scan);
-
     	if (queue_isFull(&NCDT_star_buf)){
 
     		queue_pop(&NCDT_star_buf, NCDT_star);
@@ -341,7 +301,7 @@ int main(void)
     	    NCDT_star_TX_package[2] = (0b10 << 6) | ((NCDT_star[0] >> 12) & 0x0F);   // High byte
     		HAL_UART_Transmit(&huart1, NCDT_star_TX_package, 3, HAL_MAX_DELAY);
     	} else {
-    		//printf("Waiting for buffer to fill up\r\n");
+    		/* Waiting for buffer to fill up */
     	}
     }
   }
@@ -467,8 +427,8 @@ static void MX_ADC1_Init(void)
   hadc1.Init.Overrun = ADC_OVR_DATA_PRESERVED;
   hadc1.Init.LeftBitShift = ADC_LEFTBITSHIFT_NONE;
   hadc1.Init.OversamplingMode = ENABLE;
-  hadc1.Init.Oversampling.Ratio = 16;
-  hadc1.Init.Oversampling.RightBitShift = ADC_RIGHTBITSHIFT_4;
+  hadc1.Init.Oversampling.Ratio = 8;
+  hadc1.Init.Oversampling.RightBitShift = ADC_RIGHTBITSHIFT_3;
   hadc1.Init.Oversampling.TriggeredMode = ADC_TRIGGEREDMODE_SINGLE_TRIGGER;
   hadc1.Init.Oversampling.OversamplingStopReset = ADC_REGOVERSAMPLING_CONTINUED_MODE;
   if (HAL_ADC_Init(&hadc1) != HAL_OK)
@@ -538,8 +498,8 @@ static void MX_ADC3_Init(void)
   hadc3.Init.Overrun = ADC_OVR_DATA_PRESERVED;
   hadc3.Init.LeftBitShift = ADC_LEFTBITSHIFT_NONE;
   hadc3.Init.OversamplingMode = ENABLE;
-  hadc3.Init.Oversampling.Ratio = 16;
-  hadc3.Init.Oversampling.RightBitShift = ADC_RIGHTBITSHIFT_4;
+  hadc3.Init.Oversampling.Ratio = 8;
+  hadc3.Init.Oversampling.RightBitShift = ADC_RIGHTBITSHIFT_3;
   hadc3.Init.Oversampling.TriggeredMode = ADC_TRIGGEREDMODE_SINGLE_TRIGGER;
   hadc3.Init.Oversampling.OversamplingStopReset = ADC_REGOVERSAMPLING_CONTINUED_MODE;
   if (HAL_ADC_Init(&hadc3) != HAL_OK)
@@ -563,56 +523,6 @@ static void MX_ADC3_Init(void)
   /* USER CODE BEGIN ADC3_Init 2 */
 
   /* USER CODE END ADC3_Init 2 */
-
-}
-
-/**
-  * @brief DAC1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_DAC1_Init(void)
-{
-
-  /* USER CODE BEGIN DAC1_Init 0 */
-
-  /* USER CODE END DAC1_Init 0 */
-
-  DAC_ChannelConfTypeDef sConfig = {0};
-
-  /* USER CODE BEGIN DAC1_Init 1 */
-
-  /* USER CODE END DAC1_Init 1 */
-
-  /** DAC Initialization
-  */
-  hdac1.Instance = DAC1;
-  if (HAL_DAC_Init(&hdac1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** DAC channel OUT1 config
-  */
-  sConfig.DAC_SampleAndHold = DAC_SAMPLEANDHOLD_DISABLE;
-  sConfig.DAC_Trigger = DAC_TRIGGER_NONE;
-  sConfig.DAC_OutputBuffer = DAC_OUTPUTBUFFER_ENABLE;
-  sConfig.DAC_ConnectOnChipPeripheral = DAC_CHIPCONNECT_DISABLE;
-  sConfig.DAC_UserTrimming = DAC_TRIMMING_FACTORY;
-  if (HAL_DAC_ConfigChannel(&hdac1, &sConfig, DAC_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** DAC channel OUT2 config
-  */
-  if (HAL_DAC_ConfigChannel(&hdac1, &sConfig, DAC_CHANNEL_2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN DAC1_Init 2 */
-
-  /* USER CODE END DAC1_Init 2 */
 
 }
 
