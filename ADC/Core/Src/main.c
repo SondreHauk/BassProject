@@ -73,15 +73,15 @@ uint16_t NCDT_star[NUM_CONVERSIONS];
 uint16_t LDT[NUM_CONVERSIONS];
 
 /*
- * Conditioning of ADC bit value
+ * Conditioning of ADC bit value. y_min = 0 so its omitted.
  * ADC has full scale 100 mm while laser has full scale 200 mm,
- * therefore the meas_ratio = 0.5
+ * therefore the meas_ratio = 0.5. Offset is to match NI 9205.
  */
-const float x_min = 8250.0f;
-const float x_max = 63000.0f;
-const float y_min = 0.0f;
-const float y_max = 65536.0f;
+const float x_min      = 8250.0f;
+const float x_max      = 63000.0f;
+const float y_max      = 65536.0f;
 const float meas_ratio = 0.5f;
+const float offset     = 20000.0f;
 
 /* USER CODE END PV */
 
@@ -212,7 +212,7 @@ int main(void)
 
     	for(int i = 0; i < NUM_CONVERSIONS; i++){
 
-    		float x = (y_min + ((NCDT_port_scan[i] - x_min) * (y_max - y_min)) / (x_max - x_min)) * meas_ratio;
+    		float x = (NCDT_port_scan[i] - x_min) * y_max / (x_max - x_min) * meas_ratio + offset;
     		if (x < 0.0f){
     			x = 0.0f;
     		} else if (x > 65536.0f) {
@@ -240,7 +240,7 @@ int main(void)
     	NCDT_star_scanCompleted = false;
 
     	for(int i = 0; i < NUM_CONVERSIONS; i++){
-    		float x = (y_min + ((NCDT_star_scan[i] - x_min) * (y_max - y_min)) / (x_max - x_min)) * meas_ratio;
+    		float x = (NCDT_star_scan[i] - x_min) * y_max / (x_max - x_min) * meas_ratio + offset;
     		if (x < 0.0f){
     			x = 0.0f;
     		} else if (x > 65536.0f) {
