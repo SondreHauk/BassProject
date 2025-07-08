@@ -77,11 +77,11 @@ uint16_t LDT[NUM_CONVERSIONS];
  * ADC has full scale 100 mm while laser has full scale 200 mm,
  * therefore the meas_ratio = 0.5. Offset is to match NI 9205.
  */
-const float x_min      = 8250.0f;
-const float x_max      = 63000.0f;
+const float x_min      = 6320.0f;
+const float x_max      = 23110.0f;
 const float y_max      = 65536.0f;
+const float offset     = 15000.0f;
 const float meas_ratio = 0.5f;
-const float offset     = 20000.0f;
 
 /* USER CODE END PV */
 
@@ -218,7 +218,7 @@ int main(void)
     		} else if (x > 65536.0f) {
     			x = 65536;
     		}
-    		NCDT_port_scan[i] = (uint16_t)x;
+    		NCDT_port_scan[i] = (uint16_t)NCDT_port_scan;
     	}
 
     	queue_push(&NCDT_port_buf, NCDT_port_scan);
@@ -467,10 +467,10 @@ static void MX_ADC3_Init(void)
 
   /** Configure Regular Channel
   */
-  sConfig.Channel = ADC_CHANNEL_0;
+  sConfig.Channel = ADC_CHANNEL_3;
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SamplingTime = ADC_SAMPLETIME_8CYCLES_5;
-  sConfig.SingleDiff = ADC_SINGLE_ENDED;
+  sConfig.SingleDiff = ADC_DIFFERENTIAL_ENDED;
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
   sConfig.OffsetSignedSaturation = DISABLE;
@@ -705,8 +705,8 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
-  __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOE_CLK_ENABLE();
 
