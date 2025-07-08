@@ -73,56 +73,15 @@ uint16_t NCDT_star[NUM_CONVERSIONS];
 uint16_t LDT[NUM_CONVERSIONS];
 
 /*
- * The following constants are derived by analysing the ADC response to a
- * 10Vpp input signal. To simulate the sensor, the first 643 ADC values are reserved,
- * as well as the last 649 values (reflected in y_max and y_min).
- *
- * With no conditioning:
- * +10V = x_max = 63000 and -10V = x_min = 8250
- *
- * With conditioning, using formula (1):
- * +10V = ~64000 and -10V = ~1000
- *
+ * Conditioning of ADC bit value
+ * ADC has full scale 100 mm while laser has full scale 200 mm,
+ * therefore the meas_ratio = 0.5
  */
 const float x_min = 8250.0f;
 const float x_max = 63000.0f;
-const float y_min = 0.0f;//643.0f;
-const float y_max = 65536.0f;//64887.0f;
-const float meas_ratio = 0.5; // ADC has full scale 100 mm, laser has full scale 200 mm
- /*
- * Comparing this with xRad starboard values, it is not equal at all, which leads me to
- * assume that the signal input to xRad starboard is conditioned in some way unknown at
- * time of writing. Fixed by comparing empirically:
- */
-
-/*
- * The following constants are derived empirically by comparing
- * the raw data from the signal converter (y_min and y_max) to the
- * raw data from the MCU ADC (x_min and x_max) on the xRAD from CALIBRATION on GUI.
- * Linear scaling formula is then applied to these values:
- *
- * 					(x - x_min)(y_max - y_min)
- * 		x = y_min + ---------------------------       (1)
- * 		   				  x_max - x_min
- *
- * This is a an ad hoc solution which is susceptible to change over time,
- * as the x/y_max and x/y_min values drift a bit.
- *
- * The distance d [mm] is calculated by the controller as:
- *
- * 			 1       102*x
- * 		d = --- * (-------- - 51) * MR                 (2)
- * 			100		65520
- *
- * 	See page 87 in NCDT-1420 data sheet for details.
- */
-
-/*
-const float x_min = 23000.0f;
-const float x_max = 46500.0f;
-const float y_min = 25800.0f; // original value: 25562
-const float y_max = 39550.0f;
-*/
+const float y_min = 0.0f;
+const float y_max = 65536.0f;
+const float meas_ratio = 0.5f;
 
 /* USER CODE END PV */
 
@@ -175,7 +134,6 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-  /*NCDT RS422 data formating and sending. See p.84 in optoNCDT 1420 data sheet*/
   uint8_t NCDT_port_TX_package[3];
   uint8_t NCDT_star_TX_package[3];
   /* USER CODE END 1 */
@@ -254,7 +212,7 @@ int main(void)
 
     	for(int i = 0; i < NUM_CONVERSIONS; i++){
 
-    		float x = (y_min + ((NCDT_port_scan[i] - x_min) * (y_max - y_min)) / (x_max - x_min))*meas_ratio;
+    		float x = (y_min + ((NCDT_port_scan[i] - x_min) * (y_max - y_min)) / (x_max - x_min)) * meas_ratio;
     		if (x < 0.0f){
     			x = 0.0f;
     		} else if (x > 65536.0f) {
@@ -282,7 +240,7 @@ int main(void)
     	NCDT_star_scanCompleted = false;
 
     	for(int i = 0; i < NUM_CONVERSIONS; i++){
-    		float x = (y_min + ((NCDT_star_scan[i] - x_min) * (y_max - y_min)) / (x_max - x_min))*meas_ratio;
+    		float x = (y_min + ((NCDT_star_scan[i] - x_min) * (y_max - y_min)) / (x_max - x_min)) * meas_ratio;
     		if (x < 0.0f){
     			x = 0.0f;
     		} else if (x > 65536.0f) {
