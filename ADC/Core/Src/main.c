@@ -44,7 +44,6 @@
 
 /* Private variables ---------------------------------------------------------*/
 
-COM_InitTypeDef BspCOMInit;
 ADC_HandleTypeDef hadc1;
 ADC_HandleTypeDef hadc3;
 DMA_HandleTypeDef hdma_adc1;
@@ -77,8 +76,8 @@ uint16_t LDT[NUM_CONVERSIONS];
  * ADC has full scale 100 mm while laser has full scale 200 mm,
  * therefore the meas_ratio = 0.5.
  */
-const float x_min      = 1600.0f;   //1600  //3800
-const float x_max      = 65536.0f;          //63400
+const float x_min      = 1650.0f;  //3800
+const float x_max      = 63600.0f; //63400
 const float y_max      = 65536.0f;
 const float meas_ratio = 0.5f;
 
@@ -108,12 +107,6 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
 	} else if (hadc == ADC_NCDT_star){
 		NCDT_star_scanCompleted = true;
 	}
-}
-
-void BSP_PB_Callback(Button_TypeDef Button) {
-  if (Button == BUTTON_USER) {
-    BspButtonState = BUTTON_PRESSED;
-  }
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
@@ -147,6 +140,7 @@ int main(void)
 
   /* USER CODE BEGIN Init */
   queue_init(&NCDT_port_buf);
+  queue_init(&NCDT_star_buf);
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -178,47 +172,27 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim2);
   HAL_TIM_Base_Start_IT(&htim3);
 
-  HAL_ADCEx_Calibration_Start(ADC_NCDT_port, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
-  HAL_ADCEx_Calibration_Start(ADC_NCDT_star, ADC_CALIB_OFFSET, ADC_SINGLE_ENDED);
+  HAL_ADCEx_Calibration_Start(ADC_NCDT_port, ADC_CALIB_OFFSET, ADC_DIFFERENTIAL_ENDED);
+  HAL_ADCEx_Calibration_Start(ADC_NCDT_star, ADC_CALIB_OFFSET, ADC_DIFFERENTIAL_ENDED);
 
   HAL_ADC_Start_DMA(ADC_NCDT_port,(uint32_t *)NCDT_port_scan, NUM_CONVERSIONS);
   HAL_ADC_Start_DMA(ADC_NCDT_star,(uint32_t *)NCDT_star_scan, NUM_CONVERSIONS);
   /* USER CODE END 2 */
 
-  /* Initialize USER push-button, will be used to trigger an interrupt each time it's pressed.*/
-  BSP_PB_Init(BUTTON_USER, BUTTON_MODE_EXTI);
-
-  /* Initialize COM1 port (115200, 8 bits (7-bit data + 1 stop bit), no parity */
-  BspCOMInit.BaudRate   = 115200;
-  BspCOMInit.WordLength = COM_WORDLENGTH_8B;
-  BspCOMInit.StopBits   = COM_STOPBITS_1;
-  BspCOMInit.Parity     = COM_PARITY_NONE;
-  BspCOMInit.HwFlowCtl  = COM_HWCONTROL_NONE;
-  if (BSP_COM_Init(COM1, &BspCOMInit) != BSP_ERROR_NONE)
-  {
-    Error_Handler();
-  }
-
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    if(BspButtonState == BUTTON_PRESSED){
-    	BspButtonState = BUTTON_RELEASED;
-    }
-    if(NCDT_port_scanCompleted){
+    /*if(NCDT_port_scanCompleted){
     	NCDT_port_scanCompleted = false;
 
-    	for(int i = 0; i < NUM_CONVERSIONS; i++){
-
+    	/*for(int i = 0; i < NUM_CONVERSIONS; i++){
     		float x = (NCDT_port_scan[i] - x_min) * y_max / (x_max - x_min) * meas_ratio;
-
     		if (x < 0.0f){
     			x = 0.0f;
     		} else if (x > 65536.0f) {
     			x = 65536;
     		}
-
     		NCDT_port_scan[i] = (uint16_t)x;
     	}
 
@@ -226,21 +200,22 @@ int main(void)
     	if (queue_isFull(&NCDT_port_buf)){
     		queue_pop(&NCDT_port_buf, NCDT_port);
 
-    		/*NCDT RS422 data formating and sending. See p.84 in optoNCDT 1420 data sheet*/
+    		// NCDT RS422 data formating and sending. See p.84 in optoNCDT 1420 data sheet
     		NCDT_port_TX_package[0] = (0b00 << 6) | ((NCDT_port[0] >> 0)  & 0x3F);   // Low byte
     		NCDT_port_TX_package[1] = (0b01 << 6) | ((NCDT_port[0] >> 6)  & 0x3F);   // Mid byte
     		NCDT_port_TX_package[2] = (0b10 << 6) | ((NCDT_port[0] >> 12) & 0x0F);   // High byte
     	    HAL_UART_Transmit(&huart2, NCDT_port_TX_package, 3, HAL_MAX_DELAY);
 
     	} else {
-    		/* Waiting for buffer to fill up */
+    		// Waiting for buffer to fill up
     	}
-    }
+    }*/
 
     if (NCDT_star_scanCompleted) {
     	NCDT_star_scanCompleted = false;
 
     	for(int i = 0; i < NUM_CONVERSIONS; i++){
+
     		float x = (NCDT_star_scan[i] - x_min) * y_max / (x_max - x_min) * meas_ratio;
     		if (x < 0.0f){
     			x = 0.0f;
@@ -252,12 +227,16 @@ int main(void)
 
     	queue_push(&NCDT_star_buf, NCDT_star_scan);
     	if (queue_isFull(&NCDT_star_buf)){
-
     		queue_pop(&NCDT_star_buf, NCDT_star);
 
-    	    NCDT_star_TX_package[0] = (0b00 << 6) | ((NCDT_star[0] >> 0)  & 0x3F);   // Low byte
-    	    NCDT_star_TX_package[1] = (0b01 << 6) | ((NCDT_star[0] >> 6)  & 0x3F);   // Mid byte
-    	    NCDT_star_TX_package[2] = (0b10 << 6) | ((NCDT_star[0] >> 12) & 0x0F);   // High byte
+    		NCDT_port_TX_package[0] = (0b00 << 6) | ((NCDT_star[0] >> 0)  & 0x3F);   // Low byte
+    		NCDT_port_TX_package[1] = (0b01 << 6) | ((NCDT_star[0] >> 6)  & 0x3F);   // Mid byte
+    		NCDT_port_TX_package[2] = (0b10 << 6) | ((NCDT_star[0] >> 12) & 0x0F);   // High byte
+    	    HAL_UART_Transmit(&huart2, NCDT_port_TX_package, 3, HAL_MAX_DELAY);
+
+    	    NCDT_star_TX_package[0] = (0b00 << 6) | ((NCDT_star[1] >> 0)  & 0x3F);   // Low byte
+    	    NCDT_star_TX_package[1] = (0b01 << 6) | ((NCDT_star[1] >> 6)  & 0x3F);   // Mid byte
+    	    NCDT_star_TX_package[2] = (0b10 << 6) | ((NCDT_star[1] >> 12) & 0x0F);   // High byte
     		HAL_UART_Transmit(&huart1, NCDT_star_TX_package, 3, HAL_MAX_DELAY);
     	} else {
     		/* Waiting for buffer to fill up */
@@ -445,20 +424,20 @@ static void MX_ADC3_Init(void)
   hadc3.Instance = ADC3;
   hadc3.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV4;
   hadc3.Init.Resolution = ADC_RESOLUTION_16B;
-  hadc3.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc3.Init.ScanConvMode = ADC_SCAN_ENABLE;
   hadc3.Init.EOCSelection = ADC_EOC_SEQ_CONV;
   hadc3.Init.LowPowerAutoWait = DISABLE;
   hadc3.Init.ContinuousConvMode = DISABLE;
-  hadc3.Init.NbrOfConversion = 1;
+  hadc3.Init.NbrOfConversion = 2;
   hadc3.Init.DiscontinuousConvMode = DISABLE;
-  hadc3.Init.ExternalTrigConv = ADC_EXTERNALTRIG_T3_TRGO;
+  hadc3.Init.ExternalTrigConv = ADC_EXTERNALTRIG_T2_TRGO;
   hadc3.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
   hadc3.Init.ConversionDataManagement = ADC_CONVERSIONDATA_DMA_CIRCULAR;
   hadc3.Init.Overrun = ADC_OVR_DATA_PRESERVED;
   hadc3.Init.LeftBitShift = ADC_LEFTBITSHIFT_NONE;
   hadc3.Init.OversamplingMode = ENABLE;
-  hadc3.Init.Oversampling.Ratio = 8;
-  hadc3.Init.Oversampling.RightBitShift = ADC_RIGHTBITSHIFT_3;
+  hadc3.Init.Oversampling.Ratio = 32;
+  hadc3.Init.Oversampling.RightBitShift = ADC_RIGHTBITSHIFT_5;
   hadc3.Init.Oversampling.TriggeredMode = ADC_TRIGGEREDMODE_SINGLE_TRIGGER;
   hadc3.Init.Oversampling.OversamplingStopReset = ADC_REGOVERSAMPLING_CONTINUED_MODE;
   if (HAL_ADC_Init(&hadc3) != HAL_OK)
@@ -475,6 +454,15 @@ static void MX_ADC3_Init(void)
   sConfig.OffsetNumber = ADC_OFFSET_NONE;
   sConfig.Offset = 0;
   sConfig.OffsetSignedSaturation = DISABLE;
+  if (HAL_ADC_ConfigChannel(&hadc3, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Regular Channel
+  */
+  sConfig.Channel = ADC_CHANNEL_1;
+  sConfig.Rank = ADC_REGULAR_RANK_2;
   if (HAL_ADC_ConfigChannel(&hadc3, &sConfig) != HAL_OK)
   {
     Error_Handler();
