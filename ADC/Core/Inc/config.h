@@ -9,9 +9,8 @@
 #ifndef INC_CONFIG_H_
 #define INC_CONFIG_H_
 
+#define NUM_CONVERSIONS 2 //Do not change
 #define BUF_SIZE 3
-#define NUM_CONVERSIONS 2
 #define NCDT_SAMPLE_FREQ 8000
-#define LDT_SAMPLE_FREQ 1000 // Minimum 16
 
 #endif /* INC_CONFIG_H_ */

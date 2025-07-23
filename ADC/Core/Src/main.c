@@ -47,7 +47,6 @@ ADC_HandleTypeDef hadc3;
 DMA_HandleTypeDef hdma_adc3;
 
 TIM_HandleTypeDef htim2;
-TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
@@ -56,9 +55,7 @@ UART_HandleTypeDef huart2;
 __IO bool NCDT_scanCompleted = false;
 
 Queue NCDT_buf;
-
 uint16_t NCDT_scan[NUM_CONVERSIONS];
-
 uint16_t NCDT_values[NUM_CONVERSIONS];
 
 /*
@@ -82,7 +79,6 @@ static void MX_DMA_Init(void);
 static void MX_GPIO_Init(void);
 static void MX_ADC3_Init(void);
 static void MX_TIM2_Init(void);
-static void MX_TIM3_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
@@ -100,10 +96,9 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 	if (htim == &htim2){
 		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14);
-	} else if (htim == &htim3){
-		HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
 	}
 }
+
 /* USER CODE END 0 */
 
 /**
@@ -142,19 +137,13 @@ int main(void)
   MX_GPIO_Init();
   MX_ADC3_Init();
   MX_TIM2_Init();
-  MX_TIM3_Init();
   MX_USART2_UART_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
+
   htim2.Init.Period = ADC_CLK_Hz / NCDT_SAMPLE_FREQ;
   HAL_TIM_Base_Init(&htim2);
-
-  htim3.Init.Period = ADC_CLK_Hz / LDT_SAMPLE_FREQ;
-  HAL_TIM_Base_Init(&htim3);
-
   HAL_TIM_Base_Start_IT(&htim2);
-  HAL_TIM_Base_Start_IT(&htim3);
-
   HAL_ADCEx_Calibration_Start(ADC_NCDT, ADC_CALIB_OFFSET, ADC_DIFFERENTIAL_ENDED);
   HAL_ADC_Start_DMA(ADC_NCDT,(uint32_t *)NCDT_scan, NUM_CONVERSIONS);
 
@@ -370,51 +359,6 @@ static void MX_TIM2_Init(void)
   /* USER CODE BEGIN TIM2_Init 2 */
 
   /* USER CODE END TIM2_Init 2 */
-
-}
-
-/**
-  * @brief TIM3 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_TIM3_Init(void)
-{
-
-  /* USER CODE BEGIN TIM3_Init 0 */
-
-  /* USER CODE END TIM3_Init 0 */
-
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
-  TIM_MasterConfigTypeDef sMasterConfig = {0};
-
-  /* USER CODE BEGIN TIM3_Init 1 */
-
-  /* USER CODE END TIM3_Init 1 */
-  htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 64-1;
-  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = 65536-1;
-  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-  htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
-  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
-  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN TIM3_Init 2 */
-
-  /* USER CODE END TIM3_Init 2 */
 
 }
 
