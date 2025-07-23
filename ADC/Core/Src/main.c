@@ -37,16 +37,13 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-#define ADC_NCDT_port &hadc1
-#define ADC_NCDT_star &hadc3
+#define ADC_NCDT &hadc3
 #define ADC_CLK_Hz 1000000
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
 
-ADC_HandleTypeDef hadc1;
 ADC_HandleTypeDef hadc3;
-DMA_HandleTypeDef hdma_adc1;
 DMA_HandleTypeDef hdma_adc3;
 
 TIM_HandleTypeDef htim2;
@@ -56,36 +53,30 @@ UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-__IO bool NCDT_port_scanCompleted = false;
-__IO bool NCDT_star_scanCompleted = false;
+__IO bool NCDT_scanCompleted = false;
 
-__IO uint32_t BspButtonState = BUTTON_RELEASED;
+Queue NCDT_buf;
 
-Queue NCDT_port_buf;
-Queue NCDT_star_buf;
+uint16_t NCDT_scan[NUM_CONVERSIONS];
 
-uint16_t NCDT_port_scan[NUM_CONVERSIONS];
-uint16_t NCDT_star_scan[NUM_CONVERSIONS];
-
-uint16_t NCDT_port[NUM_CONVERSIONS];
-uint16_t NCDT_star[NUM_CONVERSIONS];
-uint16_t LDT[NUM_CONVERSIONS];
+uint16_t NCDT_values[NUM_CONVERSIONS];
 
 /*
- * Conditioning of ADC bit value. y_min = 0 so its omitted.
+ * Conditioning of ADC bit value.
  * ADC has full scale 100 mm while laser has full scale 200 mm,
- * therefore the meas_ratio = 0.5.
+ * therefore the meas_ratio = 0.5. Final fit is to exactly match NI9204
  */
-const float x_min      = 1650.0f;  //3800
-const float x_max      = 63600.0f; //63400
-const float y_max      = 65536.0f;
+const float x_min      = 1650.0f;
+const float x_max      = 63600.0f;
+const float y_min      = 643.0f;
+const float y_max      = 64887.0f;
 const float meas_ratio = 0.5f;
+const float final_fit  = 0.97f;
 
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-void PeriphCommonClock_Config(void);
 static void MPU_Config(void);
 static void MX_DMA_Init(void);
 static void MX_GPIO_Init(void);
@@ -94,7 +85,6 @@ static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART1_UART_Init(void);
-static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -102,10 +92,8 @@ static void MX_ADC1_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
-	if (hadc == ADC_NCDT_port){
-		NCDT_port_scanCompleted = true;
-	} else if (hadc == ADC_NCDT_star){
-		NCDT_star_scanCompleted = true;
+	if (hadc == ADC_NCDT){
+		NCDT_scanCompleted = true;
 	}
 }
 
@@ -139,15 +127,11 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-  queue_init(&NCDT_port_buf);
-  queue_init(&NCDT_star_buf);
+  queue_init(&NCDT_buf);
   /* USER CODE END Init */
 
   /* Configure the system clock */
   SystemClock_Config();
-
-  /* Configure the peripherals common clocks */
-  PeriphCommonClock_Config();
 
   /* USER CODE BEGIN SysInit */
 
@@ -161,7 +145,6 @@ int main(void)
   MX_TIM3_Init();
   MX_USART2_UART_Init();
   MX_USART1_UART_Init();
-  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
   htim2.Init.Period = ADC_CLK_Hz / NCDT_SAMPLE_FREQ;
   HAL_TIM_Base_Init(&htim2);
@@ -172,71 +155,41 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim2);
   HAL_TIM_Base_Start_IT(&htim3);
 
-  HAL_ADCEx_Calibration_Start(ADC_NCDT_port, ADC_CALIB_OFFSET, ADC_DIFFERENTIAL_ENDED);
-  HAL_ADCEx_Calibration_Start(ADC_NCDT_star, ADC_CALIB_OFFSET, ADC_DIFFERENTIAL_ENDED);
+  HAL_ADCEx_Calibration_Start(ADC_NCDT, ADC_CALIB_OFFSET, ADC_DIFFERENTIAL_ENDED);
+  HAL_ADC_Start_DMA(ADC_NCDT,(uint32_t *)NCDT_scan, NUM_CONVERSIONS);
 
-  HAL_ADC_Start_DMA(ADC_NCDT_port,(uint32_t *)NCDT_port_scan, NUM_CONVERSIONS);
-  HAL_ADC_Start_DMA(ADC_NCDT_star,(uint32_t *)NCDT_star_scan, NUM_CONVERSIONS);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /*if(NCDT_port_scanCompleted){
-    	NCDT_port_scanCompleted = false;
-
-    	/*for(int i = 0; i < NUM_CONVERSIONS; i++){
-    		float x = (NCDT_port_scan[i] - x_min) * y_max / (x_max - x_min) * meas_ratio;
-    		if (x < 0.0f){
-    			x = 0.0f;
-    		} else if (x > 65536.0f) {
-    			x = 65536;
-    		}
-    		NCDT_port_scan[i] = (uint16_t)x;
-    	}
-
-    	queue_push(&NCDT_port_buf, NCDT_port_scan);
-    	if (queue_isFull(&NCDT_port_buf)){
-    		queue_pop(&NCDT_port_buf, NCDT_port);
-
-    		// NCDT RS422 data formating and sending. See p.84 in optoNCDT 1420 data sheet
-    		NCDT_port_TX_package[0] = (0b00 << 6) | ((NCDT_port[0] >> 0)  & 0x3F);   // Low byte
-    		NCDT_port_TX_package[1] = (0b01 << 6) | ((NCDT_port[0] >> 6)  & 0x3F);   // Mid byte
-    		NCDT_port_TX_package[2] = (0b10 << 6) | ((NCDT_port[0] >> 12) & 0x0F);   // High byte
-    	    HAL_UART_Transmit(&huart2, NCDT_port_TX_package, 3, HAL_MAX_DELAY);
-
-    	} else {
-    		// Waiting for buffer to fill up
-    	}
-    }*/
-
-    if (NCDT_star_scanCompleted) {
-    	NCDT_star_scanCompleted = false;
+    if (NCDT_scanCompleted) {
+    	NCDT_scanCompleted = false;
 
     	for(int i = 0; i < NUM_CONVERSIONS; i++){
 
-    		float x = (NCDT_star_scan[i] - x_min) * y_max / (x_max - x_min) * meas_ratio;
+    		float x = (NCDT_scan[i] - x_min) * (y_max - y_min) / (x_max - x_min) * meas_ratio * final_fit;
     		if (x < 0.0f){
     			x = 0.0f;
     		} else if (x > 65536.0f) {
     			x = 65536;
     		}
-    		NCDT_star_scan[i] = (uint16_t)x;
+    		NCDT_scan[i] = (uint16_t)x;
     	}
 
-    	queue_push(&NCDT_star_buf, NCDT_star_scan);
-    	if (queue_isFull(&NCDT_star_buf)){
-    		queue_pop(&NCDT_star_buf, NCDT_star);
+    	queue_push(&NCDT_buf, NCDT_scan);
+    	if (queue_isFull(&NCDT_buf)){
+    		queue_pop(&NCDT_buf, NCDT_values);
 
-    		NCDT_port_TX_package[0] = (0b00 << 6) | ((NCDT_star[0] >> 0)  & 0x3F);   // Low byte
-    		NCDT_port_TX_package[1] = (0b01 << 6) | ((NCDT_star[0] >> 6)  & 0x3F);   // Mid byte
-    		NCDT_port_TX_package[2] = (0b10 << 6) | ((NCDT_star[0] >> 12) & 0x0F);   // High byte
+    		NCDT_port_TX_package[0] = (0b00 << 6) | ((NCDT_values[0] >> 0)  & 0x3F);   // Low byte
+    		NCDT_port_TX_package[1] = (0b01 << 6) | ((NCDT_values[0] >> 6)  & 0x3F);   // Mid byte
+    		NCDT_port_TX_package[2] = (0b10 << 6) | ((NCDT_values[0] >> 12) & 0x0F);   // High byte
     	    HAL_UART_Transmit(&huart2, NCDT_port_TX_package, 3, HAL_MAX_DELAY);
 
-    	    NCDT_star_TX_package[0] = (0b00 << 6) | ((NCDT_star[1] >> 0)  & 0x3F);   // Low byte
-    	    NCDT_star_TX_package[1] = (0b01 << 6) | ((NCDT_star[1] >> 6)  & 0x3F);   // Mid byte
-    	    NCDT_star_TX_package[2] = (0b10 << 6) | ((NCDT_star[1] >> 12) & 0x0F);   // High byte
+    	    NCDT_star_TX_package[0] = (0b00 << 6) | ((NCDT_values[1] >> 0)  & 0x3F);   // Low byte
+    	    NCDT_star_TX_package[1] = (0b01 << 6) | ((NCDT_values[1] >> 6)  & 0x3F);   // Mid byte
+    	    NCDT_star_TX_package[2] = (0b10 << 6) | ((NCDT_values[1] >> 12) & 0x0F);   // High byte
     		HAL_UART_Transmit(&huart1, NCDT_star_TX_package, 3, HAL_MAX_DELAY);
     	} else {
     		/* Waiting for buffer to fill up */
@@ -301,104 +254,6 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-}
-
-/**
-  * @brief Peripherals Common Clock Configuration
-  * @retval None
-  */
-void PeriphCommonClock_Config(void)
-{
-  RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
-
-  /** Initializes the peripherals clock
-  */
-  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_ADC;
-  PeriphClkInitStruct.PLL2.PLL2M = 4;
-  PeriphClkInitStruct.PLL2.PLL2N = 10;
-  PeriphClkInitStruct.PLL2.PLL2P = 2;
-  PeriphClkInitStruct.PLL2.PLL2Q = 2;
-  PeriphClkInitStruct.PLL2.PLL2R = 2;
-  PeriphClkInitStruct.PLL2.PLL2RGE = RCC_PLL2VCIRANGE_3;
-  PeriphClkInitStruct.PLL2.PLL2VCOSEL = RCC_PLL2VCOMEDIUM;
-  PeriphClkInitStruct.PLL2.PLL2FRACN = 0;
-  PeriphClkInitStruct.AdcClockSelection = RCC_ADCCLKSOURCE_PLL2;
-  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
-  {
-    Error_Handler();
-  }
-}
-
-/**
-  * @brief ADC1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_ADC1_Init(void)
-{
-
-  /* USER CODE BEGIN ADC1_Init 0 */
-
-  /* USER CODE END ADC1_Init 0 */
-
-  ADC_MultiModeTypeDef multimode = {0};
-  ADC_ChannelConfTypeDef sConfig = {0};
-
-  /* USER CODE BEGIN ADC1_Init 1 */
-
-  /* USER CODE END ADC1_Init 1 */
-
-  /** Common config
-  */
-  hadc1.Instance = ADC1;
-  hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV4;
-  hadc1.Init.Resolution = ADC_RESOLUTION_16B;
-  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
-  hadc1.Init.EOCSelection = ADC_EOC_SEQ_CONV;
-  hadc1.Init.LowPowerAutoWait = DISABLE;
-  hadc1.Init.ContinuousConvMode = DISABLE;
-  hadc1.Init.NbrOfConversion = 1;
-  hadc1.Init.DiscontinuousConvMode = DISABLE;
-  hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIG_T2_TRGO;
-  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
-  hadc1.Init.ConversionDataManagement = ADC_CONVERSIONDATA_DMA_CIRCULAR;
-  hadc1.Init.Overrun = ADC_OVR_DATA_PRESERVED;
-  hadc1.Init.LeftBitShift = ADC_LEFTBITSHIFT_NONE;
-  hadc1.Init.OversamplingMode = ENABLE;
-  hadc1.Init.Oversampling.Ratio = 32;
-  hadc1.Init.Oversampling.RightBitShift = ADC_RIGHTBITSHIFT_5;
-  hadc1.Init.Oversampling.TriggeredMode = ADC_TRIGGEREDMODE_SINGLE_TRIGGER;
-  hadc1.Init.Oversampling.OversamplingStopReset = ADC_REGOVERSAMPLING_CONTINUED_MODE;
-  if (HAL_ADC_Init(&hadc1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure the ADC multi-mode
-  */
-  multimode.Mode = ADC_MODE_INDEPENDENT;
-  if (HAL_ADCEx_MultiModeConfigChannel(&hadc1, &multimode) != HAL_OK)
-  {
-    Error_Handler();
-  }
-
-  /** Configure Regular Channel
-  */
-  sConfig.Channel = ADC_CHANNEL_5;
-  sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_16CYCLES_5;
-  sConfig.SingleDiff = ADC_DIFFERENTIAL_ENDED;
-  sConfig.OffsetNumber = ADC_OFFSET_NONE;
-  sConfig.Offset = 0;
-  sConfig.OffsetSignedSaturation = DISABLE;
-  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN ADC1_Init 2 */
-
-  /* USER CODE END ADC1_Init 2 */
-
 }
 
 /**
@@ -672,9 +527,6 @@ static void MX_DMA_Init(void)
   /* DMA1_Stream0_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
-  /* DMA1_Stream1_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
 
 }
 
