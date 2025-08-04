@@ -95,7 +95,7 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 	if (htim == &htim2){
-		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14);
+		//HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14);
 	}
 }
 
@@ -174,12 +174,12 @@ int main(void)
     		NCDT_port_TX_package[0] = (0b00 << 6) | ((NCDT_values[0] >> 0)  & 0x3F);   // Low byte
     		NCDT_port_TX_package[1] = (0b01 << 6) | ((NCDT_values[0] >> 6)  & 0x3F);   // Mid byte
     		NCDT_port_TX_package[2] = (0b10 << 6) | ((NCDT_values[0] >> 12) & 0x0F);   // High byte
-    	    HAL_UART_Transmit(&huart2, NCDT_port_TX_package, 3, HAL_MAX_DELAY);
+    	    HAL_UART_Transmit(&huart1, NCDT_port_TX_package, 3, HAL_MAX_DELAY);
 
     	    NCDT_star_TX_package[0] = (0b00 << 6) | ((NCDT_values[1] >> 0)  & 0x3F);   // Low byte
     	    NCDT_star_TX_package[1] = (0b01 << 6) | ((NCDT_values[1] >> 6)  & 0x3F);   // Mid byte
     	    NCDT_star_TX_package[2] = (0b10 << 6) | ((NCDT_values[1] >> 12) & 0x0F);   // High byte
-    		HAL_UART_Transmit(&huart1, NCDT_star_TX_package, 3, HAL_MAX_DELAY);
+    		HAL_UART_Transmit(&huart2, NCDT_star_TX_package, 3, HAL_MAX_DELAY);
     	} else {
     		/* Waiting for buffer to fill up */
     	}
@@ -291,7 +291,7 @@ static void MX_ADC3_Init(void)
 
   /** Configure Regular Channel
   */
-  sConfig.Channel = ADC_CHANNEL_3;
+  sConfig.Channel = ADC_CHANNEL_1;
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SamplingTime = ADC_SAMPLETIME_8CYCLES_5;
   sConfig.SingleDiff = ADC_DIFFERENTIAL_ENDED;
@@ -305,7 +305,7 @@ static void MX_ADC3_Init(void)
 
   /** Configure Regular Channel
   */
-  sConfig.Channel = ADC_CHANNEL_1;
+  sConfig.Channel = ADC_CHANNEL_3;
   sConfig.Rank = ADC_REGULAR_RANK_2;
   if (HAL_ADC_ConfigChannel(&hadc3, &sConfig) != HAL_OK)
   {
@@ -490,8 +490,8 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOF_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOE_CLK_ENABLE();
 
