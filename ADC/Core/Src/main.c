@@ -171,14 +171,14 @@ int main(void)
     	if (queue_isFull(&NCDT_buf)){
     		queue_pop(&NCDT_buf, NCDT_values);
 
-    		NCDT_port_TX_package[0] = (0b00 << 6) | ((NCDT_values[0] >> 0)  & 0x3F);   // Low byte
-    		NCDT_port_TX_package[1] = (0b01 << 6) | ((NCDT_values[0] >> 6)  & 0x3F);   // Mid byte
-    		NCDT_port_TX_package[2] = (0b10 << 6) | ((NCDT_values[0] >> 12) & 0x0F);   // High byte
+    		NCDT_port_TX_package[0] = (0b00 << 6) | ((NCDT_values[0] >> 0)  & 0x3F);
+    		NCDT_port_TX_package[1] = (0b01 << 6) | ((NCDT_values[0] >> 6)  & 0x3F);
+    		NCDT_port_TX_package[2] = (0b10 << 6) | ((NCDT_values[0] >> 12) & 0x0F);
     	    HAL_UART_Transmit(&huart1, NCDT_port_TX_package, 3, HAL_MAX_DELAY);
 
-    	    NCDT_star_TX_package[0] = (0b00 << 6) | ((NCDT_values[1] >> 0)  & 0x3F);   // Low byte
-    	    NCDT_star_TX_package[1] = (0b01 << 6) | ((NCDT_values[1] >> 6)  & 0x3F);   // Mid byte
-    	    NCDT_star_TX_package[2] = (0b10 << 6) | ((NCDT_values[1] >> 12) & 0x0F);   // High byte
+    	    NCDT_star_TX_package[0] = (0b00 << 6) | ((NCDT_values[1] >> 0)  & 0x3F);
+    	    NCDT_star_TX_package[1] = (0b01 << 6) | ((NCDT_values[1] >> 6)  & 0x3F);
+    	    NCDT_star_TX_package[2] = (0b10 << 6) | ((NCDT_values[1] >> 12) & 0x0F);
     		HAL_UART_Transmit(&huart2, NCDT_star_TX_package, 3, HAL_MAX_DELAY);
     	} else {
     		/* Waiting for buffer to fill up */
