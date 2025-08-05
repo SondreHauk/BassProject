@@ -13,6 +13,8 @@
 #include <stdbool.h>
 #include "config.h"
 
+#define NUM_CONVERSIONS 2
+
 typedef struct {
 	uint16_t buffer[BUF_SIZE][NUM_CONVERSIONS];
 	uint8_t  head;

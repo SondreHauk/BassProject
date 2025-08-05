@@ -37,8 +37,8 @@
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
-#define ADC_NCDT &hadc3
 #define ADC_CLK_Hz 1000000
+#define NUM_CONVERSIONS 2
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -46,17 +46,20 @@
 ADC_HandleTypeDef hadc3;
 DMA_HandleTypeDef hdma_adc3;
 
+SPI_HandleTypeDef hspi1;
+DMA_HandleTypeDef hdma_spi1_tx;
+
 TIM_HandleTypeDef htim2;
 
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-__IO bool NCDT_scanCompleted = false;
+__IO bool scanCompleted = false;
 
-Queue NCDT_buf;
-uint16_t NCDT_scan[NUM_CONVERSIONS];
-uint16_t NCDT_values[NUM_CONVERSIONS];
+Queue buf;
+uint16_t scan[NUM_CONVERSIONS];
+uint16_t values[NUM_CONVERSIONS];
 
 /*
  * Conditioning of ADC bit value.
@@ -81,6 +84,7 @@ static void MX_ADC3_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -88,14 +92,14 @@ static void MX_USART1_UART_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
-	if (hadc == ADC_NCDT){
-		NCDT_scanCompleted = true;
+	if (hadc == &hadc3){
+		scanCompleted = true;
 	}
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 	if (htim == &htim2){
-		//HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14);
+		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14);
 	}
 }
 
@@ -109,8 +113,8 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-  uint8_t NCDT_port_TX_package[3];
-  uint8_t NCDT_star_TX_package[3];
+  uint8_t port_TX_package[3];
+  uint8_t star_TX_package[3];
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/
@@ -122,7 +126,7 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
-  queue_init(&NCDT_buf);
+  queue_init(&buf);
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -139,13 +143,14 @@ int main(void)
   MX_TIM2_Init();
   MX_USART2_UART_Init();
   MX_USART1_UART_Init();
+  MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
 
-  htim2.Init.Period = ADC_CLK_Hz / NCDT_SAMPLE_FREQ;
+  htim2.Init.Period = ADC_CLK_Hz / SAMPLE_FREQ;
   HAL_TIM_Base_Init(&htim2);
   HAL_TIM_Base_Start_IT(&htim2);
-  HAL_ADCEx_Calibration_Start(ADC_NCDT, ADC_CALIB_OFFSET, ADC_DIFFERENTIAL_ENDED);
-  HAL_ADC_Start_DMA(ADC_NCDT,(uint32_t *)NCDT_scan, NUM_CONVERSIONS);
+  HAL_ADCEx_Calibration_Start(&hadc3, ADC_CALIB_OFFSET, ADC_DIFFERENTIAL_ENDED);
+  HAL_ADC_Start_DMA(&hadc3,(uint32_t *)scan, NUM_CONVERSIONS);
 
   /* USER CODE END 2 */
 
@@ -153,33 +158,33 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    if (NCDT_scanCompleted) {
-    	NCDT_scanCompleted = false;
+    if (scanCompleted) {
+    	scanCompleted = false;
 
     	for(int i = 0; i < NUM_CONVERSIONS; i++){
 
-    		float x = (NCDT_scan[i] - x_min) * (y_max - y_min) / (x_max - x_min) * meas_ratio * final_fit;
+    		float x = (scan[i] - x_min) * (y_max - y_min) / (x_max - x_min) * meas_ratio * final_fit;
     		if (x < 0.0f){
     			x = 0.0f;
     		} else if (x > 65536.0f) {
     			x = 65536;
     		}
-    		NCDT_scan[i] = (uint16_t)x;
+    		scan[i] = (uint16_t)x;
     	}
 
-    	queue_push(&NCDT_buf, NCDT_scan);
-    	if (queue_isFull(&NCDT_buf)){
-    		queue_pop(&NCDT_buf, NCDT_values);
+    	queue_push(&buf, scan);
+    	if (queue_isFull(&buf)){
+    		queue_pop(&buf, values);
 
-    		NCDT_port_TX_package[0] = (0b00 << 6) | ((NCDT_values[0] >> 0)  & 0x3F);
-    		NCDT_port_TX_package[1] = (0b01 << 6) | ((NCDT_values[0] >> 6)  & 0x3F);
-    		NCDT_port_TX_package[2] = (0b10 << 6) | ((NCDT_values[0] >> 12) & 0x0F);
-    	    HAL_UART_Transmit(&huart1, NCDT_port_TX_package, 3, HAL_MAX_DELAY);
+    		port_TX_package[0] = (0b00 << 6) | ((values[0] >> 0)  & 0x3F);
+    		port_TX_package[1] = (0b01 << 6) | ((values[0] >> 6)  & 0x3F);
+    		port_TX_package[2] = (0b10 << 6) | ((values[0] >> 12) & 0x0F);
+    	    HAL_UART_Transmit(&huart1, port_TX_package, 3, HAL_MAX_DELAY);
 
-    	    NCDT_star_TX_package[0] = (0b00 << 6) | ((NCDT_values[1] >> 0)  & 0x3F);
-    	    NCDT_star_TX_package[1] = (0b01 << 6) | ((NCDT_values[1] >> 6)  & 0x3F);
-    	    NCDT_star_TX_package[2] = (0b10 << 6) | ((NCDT_values[1] >> 12) & 0x0F);
-    		HAL_UART_Transmit(&huart2, NCDT_star_TX_package, 3, HAL_MAX_DELAY);
+    	    star_TX_package[0] = (0b00 << 6) | ((values[1] >> 0)  & 0x3F);
+    	    star_TX_package[1] = (0b01 << 6) | ((values[1] >> 6)  & 0x3F);
+    	    star_TX_package[2] = (0b10 << 6) | ((values[1] >> 12) & 0x0F);
+    		HAL_UART_Transmit(&huart2, star_TX_package, 3, HAL_MAX_DELAY);
     	} else {
     		/* Waiting for buffer to fill up */
     	}
@@ -210,17 +215,22 @@ void SystemClock_Config(void)
 
   while(!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {}
 
-  /** Macro to configure the PLL clock source
-  */
-  __HAL_RCC_PLL_PLLSOURCE_CONFIG(RCC_PLLSOURCE_HSI);
-
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
   RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_DIV1;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+  RCC_OscInitStruct.PLL.PLLM = 4;
+  RCC_OscInitStruct.PLL.PLLN = 10;
+  RCC_OscInitStruct.PLL.PLLP = 2;
+  RCC_OscInitStruct.PLL.PLLQ = 2;
+  RCC_OscInitStruct.PLL.PLLR = 2;
+  RCC_OscInitStruct.PLL.PLLRGE = RCC_PLL1VCIRANGE_3;
+  RCC_OscInitStruct.PLL.PLLVCOSEL = RCC_PLL1VCOMEDIUM;
+  RCC_OscInitStruct.PLL.PLLFRACN = 0;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -314,6 +324,53 @@ static void MX_ADC3_Init(void)
   /* USER CODE BEGIN ADC3_Init 2 */
 
   /* USER CODE END ADC3_Init 2 */
+
+}
+
+/**
+  * @brief SPI1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI1_Init(void)
+{
+
+  /* USER CODE BEGIN SPI1_Init 0 */
+
+  /* USER CODE END SPI1_Init 0 */
+
+  /* USER CODE BEGIN SPI1_Init 1 */
+
+  /* USER CODE END SPI1_Init 1 */
+  /* SPI1 parameter configuration*/
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_SLAVE;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES_TXONLY;
+  hspi1.Init.DataSize = SPI_DATASIZE_24BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 0x0;
+  hspi1.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
+  hspi1.Init.NSSPolarity = SPI_NSS_POLARITY_LOW;
+  hspi1.Init.FifoThreshold = SPI_FIFO_THRESHOLD_01DATA;
+  hspi1.Init.TxCRCInitializationPattern = SPI_CRC_INITIALIZATION_ALL_ZERO_PATTERN;
+  hspi1.Init.RxCRCInitializationPattern = SPI_CRC_INITIALIZATION_ALL_ZERO_PATTERN;
+  hspi1.Init.MasterSSIdleness = SPI_MASTER_SS_IDLENESS_00CYCLE;
+  hspi1.Init.MasterInterDataIdleness = SPI_MASTER_INTERDATA_IDLENESS_00CYCLE;
+  hspi1.Init.MasterReceiverAutoSusp = SPI_MASTER_RX_AUTOSUSP_DISABLE;
+  hspi1.Init.MasterKeepIOState = SPI_MASTER_KEEP_IO_STATE_DISABLE;
+  hspi1.Init.IOSwap = SPI_IO_SWAP_DISABLE;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI1_Init 2 */
+
+  /* USER CODE END SPI1_Init 2 */
 
 }
 
@@ -471,6 +528,9 @@ static void MX_DMA_Init(void)
   /* DMA1_Stream0_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
+  /* DMA1_Stream1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
 
 }
 
