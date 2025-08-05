@@ -47,7 +47,9 @@ ADC_HandleTypeDef hadc3;
 DMA_HandleTypeDef hdma_adc3;
 
 SPI_HandleTypeDef hspi1;
+SPI_HandleTypeDef hspi3;
 DMA_HandleTypeDef hdma_spi1_tx;
+DMA_HandleTypeDef hdma_spi3_tx;
 
 TIM_HandleTypeDef htim2;
 
@@ -85,13 +87,14 @@ static void MX_TIM2_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_SPI1_Init(void);
+static void MX_SPI3_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
 	if (hadc == &hadc3){
 		scanCompleted = true;
 	}
@@ -100,6 +103,12 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc) {
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 	if (htim == &htim2){
 		HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14);
+	}
+}
+
+void HAL_SPI_TxCpltCallBack(SPI_HandleTypeDef * hspi){
+	if (hspi == &hspi1){
+		HAL_GPIO_TogglePin(GPIOE, GPIO_PIN_1);
 	}
 }
 
@@ -113,8 +122,10 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-  uint8_t port_TX_package[3];
-  uint8_t star_TX_package[3];
+  uint8_t UART_port_TX_package[3];
+  uint8_t UART_star_TX_package[3];
+  uint32_t SSI_port_TX_package;
+  uint32_t SSI_star_TX_package;
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/
@@ -144,6 +155,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART1_UART_Init();
   MX_SPI1_Init();
+  MX_SPI3_Init();
   /* USER CODE BEGIN 2 */
 
   htim2.Init.Period = ADC_CLK_Hz / SAMPLE_FREQ;
@@ -156,6 +168,7 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+
   while (1)
   {
     if (scanCompleted) {
@@ -176,17 +189,31 @@ int main(void)
     	if (queue_isFull(&buf)){
     		queue_pop(&buf, values);
 
-    		port_TX_package[0] = (0b00 << 6) | ((values[0] >> 0)  & 0x3F);
-    		port_TX_package[1] = (0b01 << 6) | ((values[0] >> 6)  & 0x3F);
-    		port_TX_package[2] = (0b10 << 6) | ((values[0] >> 12) & 0x0F);
-    	    HAL_UART_Transmit(&huart1, port_TX_package, 3, HAL_MAX_DELAY);
+    		if (COM_PROTOCOL == UART){
 
-    	    star_TX_package[0] = (0b00 << 6) | ((values[1] >> 0)  & 0x3F);
-    	    star_TX_package[1] = (0b01 << 6) | ((values[1] >> 6)  & 0x3F);
-    	    star_TX_package[2] = (0b10 << 6) | ((values[1] >> 12) & 0x0F);
-    		HAL_UART_Transmit(&huart2, star_TX_package, 3, HAL_MAX_DELAY);
+        		UART_port_TX_package[0] = (0b00 << 6) | ((values[0] >> 0)  & 0x3F);
+        		UART_port_TX_package[1] = (0b01 << 6) | ((values[0] >> 6)  & 0x3F);
+        		UART_port_TX_package[2] = (0b10 << 6) | ((values[0] >> 12) & 0x0F);
+
+        	    UART_star_TX_package[0] = (0b00 << 6) | ((values[1] >> 0)  & 0x3F);
+        	    UART_star_TX_package[1] = (0b01 << 6) | ((values[1] >> 6)  & 0x3F);
+        	    UART_star_TX_package[2] = (0b10 << 6) | ((values[1] >> 12) & 0x0F);
+
+        	    HAL_UART_Transmit(&huart1, UART_port_TX_package, 3, HAL_MAX_DELAY);
+        		HAL_UART_Transmit(&huart2, UART_star_TX_package, 3, HAL_MAX_DELAY);
+
+    		} else if (COM_PROTOCOL == SSI){
+
+    			SSI_port_TX_package = ((uint32_t)values[0]) << 8;
+    			SSI_star_TX_package = ((uint32_t)values[1]) << 8;
+
+    			HAL_SPI_Transmit_DMA(&hspi1, (uint8_t*)&SSI_port_TX_package, 3);
+    			HAL_SPI_Transmit_DMA(&hspi3, (uint8_t*)&SSI_star_TX_package, 3);
+
+    		}
+
     	} else {
-    		/* Waiting for buffer to fill up */
+    		/* Wait for buffer to fill up */
     	}
     }
   }
@@ -375,6 +402,53 @@ static void MX_SPI1_Init(void)
 }
 
 /**
+  * @brief SPI3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI3_Init(void)
+{
+
+  /* USER CODE BEGIN SPI3_Init 0 */
+
+  /* USER CODE END SPI3_Init 0 */
+
+  /* USER CODE BEGIN SPI3_Init 1 */
+
+  /* USER CODE END SPI3_Init 1 */
+  /* SPI3 parameter configuration*/
+  hspi3.Instance = SPI3;
+  hspi3.Init.Mode = SPI_MODE_SLAVE;
+  hspi3.Init.Direction = SPI_DIRECTION_2LINES_TXONLY;
+  hspi3.Init.DataSize = SPI_DATASIZE_4BIT;
+  hspi3.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi3.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi3.Init.NSS = SPI_NSS_SOFT;
+  hspi3.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi3.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi3.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi3.Init.CRCPolynomial = 0x0;
+  hspi3.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
+  hspi3.Init.NSSPolarity = SPI_NSS_POLARITY_LOW;
+  hspi3.Init.FifoThreshold = SPI_FIFO_THRESHOLD_01DATA;
+  hspi3.Init.TxCRCInitializationPattern = SPI_CRC_INITIALIZATION_ALL_ZERO_PATTERN;
+  hspi3.Init.RxCRCInitializationPattern = SPI_CRC_INITIALIZATION_ALL_ZERO_PATTERN;
+  hspi3.Init.MasterSSIdleness = SPI_MASTER_SS_IDLENESS_00CYCLE;
+  hspi3.Init.MasterInterDataIdleness = SPI_MASTER_INTERDATA_IDLENESS_00CYCLE;
+  hspi3.Init.MasterReceiverAutoSusp = SPI_MASTER_RX_AUTOSUSP_DISABLE;
+  hspi3.Init.MasterKeepIOState = SPI_MASTER_KEEP_IO_STATE_DISABLE;
+  hspi3.Init.IOSwap = SPI_IO_SWAP_DISABLE;
+  if (HAL_SPI_Init(&hspi3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI3_Init 2 */
+
+  /* USER CODE END SPI3_Init 2 */
+
+}
+
+/**
   * @brief TIM2 Initialization Function
   * @param None
   * @retval None
@@ -531,6 +605,9 @@ static void MX_DMA_Init(void)
   /* DMA1_Stream1_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
+  /* DMA1_Stream2_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream2_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream2_IRQn);
 
 }
 
