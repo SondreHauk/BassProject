@@ -11,13 +11,14 @@
 
 #define COM_PROTOCOL UART
 #define BUF_SIZE 3
-#define SAMPLE_FREQ 8000
+#define ADC_SAMPLE_FREQ 8000
+#define SSI_FREQ 4000
 
 /*
  * Do not change anything below this line
  */
 
-#define UART 0
-#define SSI 1
+//#define UART 0
+//#define SSI 1
 
 #endif /* INC_CONFIG_H_ */
