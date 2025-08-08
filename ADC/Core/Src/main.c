@@ -59,31 +59,16 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 volatile bool adcScanCompleted = false;
+volatile bool ssiTxReady = false;
 
-Queue buf;
-uint16_t scan[NUM_CONVERSIONS];
-uint16_t values[NUM_CONVERSIONS];
+const uint16_t adc_max = 65535;
+const uint32_t ssi_min = 25000;
+const uint32_t ssi_max = 125000;
 
-/*
- * Conditioning of ADC bit value for UART transmission.
- * ADC has full scale 100 mm while laser has full scale 200 mm,
- * therefore the meas_ratio = 0.5. Final fit is to exactly match NI9204
- */
-const float x_min      = 1650.0f;
-const float x_max      = 63600.0f;
-const float y_min      = 643.0f;
-const float y_max      = 64887.0f;
-const float meas_ratio = 0.5f;
-const float final_fit  = 0.97f;
-
-/*
- * Double buffer for SSI transmission
- */
-
-volatile uint16_t adcBuffer[2][NUM_CONVERSIONS];
+/*volatile uint16_t adcBuffer[2][NUM_CONVERSIONS];
 volatile uint8_t adcWriteIndex = 0;
 volatile uint8_t spiReadIndex = 1;
-volatile bool adcBufferReady = false;
+volatile bool adcBufferReady = false;*/
 
 /* USER CODE END PV */
 
@@ -108,10 +93,11 @@ static void MX_TIM1_Init(void);
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
 	if (hadc == &hadc3){
 		adcScanCompleted = true;
-	    adcBufferReady = true;
+
+		/*adcBufferReady = true;
 	    uint8_t tmp = adcWriteIndex;
 	    adcWriteIndex = spiReadIndex;
-	    spiReadIndex = tmp;
+	    spiReadIndex = tmp;*/
 	}
 }
 
@@ -125,10 +111,11 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 	} else if (htim == &htim1){
 		/*
 		 * We are now in the middle between two SSI CLK burst.
-		 * Load the latest ADC value into buffer for SPI to TX at next burst.
+		 * In main(): load the latest ADC value into buffer for SPI to TX at next burst.
 		 * Note that therefore the value being transmitted on the SPI might not be
-		 * the most recent ADC value at the time of transmission.
+		 * the most recent ADC value at the time of transmission
 		 */
+		ssiTxReady = true;
 		CLEAR_BIT(hspi1.Instance->CR1, SPI_CR1_SSI); // Set NSS low, enabling SSI TX
 		HAL_SPI_Abort(&hspi1);
 		HAL_GPIO_TogglePin(GPIOE, LD2_Pin);
@@ -158,10 +145,12 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-  uint8_t UART_port_TX_package[3];
-  uint8_t UART_star_TX_package[3];
-  uint32_t SSI_port_TX_package;
-  uint32_t SSI_star_TX_package;
+  Queue buf;
+  uint16_t scan[NUM_CONVERSIONS];
+  uint16_t NVIC_cond[NUM_CONVERSIONS];
+  uint16_t dequeued[NUM_CONVERSIONS];
+  uint8_t UART_TX_package[NUM_CONVERSIONS][3];
+  uint32_t SSI_TX_package[NUM_CONVERSIONS];
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/
@@ -213,66 +202,45 @@ int main(void)
 
   while (1)
   {
-    if (adcScanCompleted){ /*UART*/
+    if (adcScanCompleted){ 				 // UART
     	  adcScanCompleted = false;
 
     	for(int i = 0; i < NUM_CONVERSIONS; i++){
+    		NVIC_cond[i] = scan[i] >> 1; // ADC full scale  = 100 mm,
+    	}								 // NVIC full scale = 200 mm,
+    									 // therefore the division by two.
 
-    		float x = (scan[i] - x_min) * (y_max - y_min) / (x_max - x_min) * meas_ratio * final_fit;
-    		if (x < 0.0f){
-    			x = 0.0f;
-    		} else if (x > 65536.0f) {
-    			x = 65536;
-    		}
-    		scan[i] = (uint16_t)x;
-    	}
-
-    	queue_push(&buf, scan);
+    	queue_push(&buf, NVIC_cond);
     	if (queue_isFull(&buf)){
-    		queue_pop(&buf, values);
+    		queue_pop(&buf, dequeued);
 
-        	UART_port_TX_package[0] = (0b00 << 6) | ((values[0] >> 0)  & 0x3F);
-        	UART_port_TX_package[1] = (0b01 << 6) | ((values[0] >> 6)  & 0x3F);
-       		UART_port_TX_package[2] = (0b10 << 6) | ((values[0] >> 12) & 0x0F);
+        	UART_TX_package[0][0] = (0b00 << 6) | ((dequeued[0] >> 0)  & 0x3F);
+        	UART_TX_package[0][1] = (0b01 << 6) | ((dequeued[0] >> 6)  & 0x3F);
+       		UART_TX_package[0][2] = (0b10 << 6) | ((dequeued[0] >> 12) & 0x0F);
 
-            UART_star_TX_package[0] = (0b00 << 6) | ((values[1] >> 0)  & 0x3F);
-       	    UART_star_TX_package[1] = (0b01 << 6) | ((values[1] >> 6)  & 0x3F);
-       	    UART_star_TX_package[2] = (0b10 << 6) | ((values[1] >> 12) & 0x0F);
+            UART_TX_package[1][0] = (0b00 << 6) | ((dequeued[1] >> 0)  & 0x3F);
+       	    UART_TX_package[1][1] = (0b01 << 6) | ((dequeued[1] >> 6)  & 0x3F);
+       	    UART_TX_package[1][2] = (0b10 << 6) | ((dequeued[1] >> 12) & 0x0F);
 
-       	    HAL_UART_Transmit(&huart1, UART_port_TX_package, 3, HAL_MAX_DELAY);
-       		HAL_UART_Transmit(&huart2, UART_star_TX_package, 3, HAL_MAX_DELAY);
+       	    HAL_UART_Transmit(&huart1, UART_TX_package[0], 3, HAL_MAX_DELAY);
+       		HAL_UART_Transmit(&huart2, UART_TX_package[1], 3, HAL_MAX_DELAY);
     	}
     }
-    if (adcBufferReady){ /*SSI*/
-   			adcBufferReady = false;
+    if (ssiTxReady){ 					 //SSI
+   			ssiTxReady = false;
 
-   		    uint32_t word = (adcBuffer[spiReadIndex][0] & 0xFFFF) << 8;
-   		    txBuf[0] = (word >> 16) & 0xFF;
-   		    txBuf[1] = (word >> 8)  & 0xFF;
-   		    txBuf[2] = (word >> 0)  & 0xFF;
-
-   		    HAL_SPI_Transmit_DMA(&hspi1, txBuf, 3);
-   			for(int i = 0; i < NUM_CONVERSIONS; i++){
-   				uint32_t x = adcBuffer[spiReadIndex][i];
-   				SSI_port_TX_package = (x << 8);
-   			}
-   		}
-
-			SSI_port_TX_package = ((uint32_t)values[0]) << 8;
-			SSI_star_TX_package = ((uint32_t)values[1]) << 8;
-
-			//HAL_GPIO_WritePin(GPIOB, GPIO_Pin, GPIO_PIN_SET);
-			//HAL_GPIO_WritePin(GPIOB, GPIO_Pin, GPIO_PIN_RESET);
-
-			HAL_SPI_Transmit_DMA(&hspi1, (uint8_t*)&SSI_port_TX_package, 5);
-			HAL_SPI_Transmit_DMA(&hspi3, (uint8_t*)&SSI_star_TX_package, 5);
-   		}
-   	}
+   	    	for(int i = 0; i < NUM_CONVERSIONS; i++){
+   	    		float LDT_cond = ssi_min + scan[i] * (ssi_max - ssi_min) / adc_max;
+   	    		SSI_TX_package[i] = (uint32_t)LDT_cond;
+   	    		SSI_TX_package[i] = SSI_TX_package[i] << 8;
+   	    	}
+			HAL_SPI_Transmit_DMA(&hspi1, (uint8_t*)&SSI_TX_package[0], 5);
+			HAL_SPI_Transmit_DMA(&hspi3, (uint8_t*)&SSI_TX_package[1], 5);
+    }
     /* USER CODE END WHILE */
-
+  }
     /* USER CODE BEGIN 3 */
   /* USER CODE END 3 */
-  }
 }
 
 /**
@@ -744,7 +712,7 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin : PB5 */
   GPIO_InitStruct.Pin = GPIO_PIN_5;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LD2_Pin */
