@@ -59,9 +59,9 @@ UART_HandleTypeDef huart2;
 volatile bool adcScanCompleted = false;
 volatile bool ssiTxReady = false;
 
-const uint16_t adc_max = 65535;
-const uint32_t ssi_min = 25000;
-const uint32_t ssi_max = 125000;
+const float adc_max = 65535;
+const float ssi_min = 25000;
+const float ssi_max = 125000;
 
 /* USER CODE END PV */
 
@@ -215,10 +215,10 @@ int main(void)
        		HAL_UART_Transmit(&huart2, UART_TX_package[1], 3, HAL_MAX_DELAY);
     	}
     }
-    if (ssiTxReady){
+    if (ssiTxReady){ //polling not robust for higher SSI_FREQ. Consider timer/IT driven transmission in stead.
    			ssiTxReady = false;
-   	    	uint32_t LDT_cond = ssi_min + scan[0] * (ssi_max - ssi_min) / adc_max;
-   	    	SSI_TX_package = LDT_cond;
+   			float cond = ssi_min + scan[0] * (ssi_max - ssi_min) / adc_max;
+   	    	SSI_TX_package = (uint32_t)cond;
    	    	HAL_SPI_Transmit(&hspi1, (uint8_t *)&SSI_TX_package, 1, HAL_MAX_DELAY);
     }
   }
