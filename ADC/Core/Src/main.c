@@ -48,8 +48,6 @@ ADC_HandleTypeDef hadc3;
 DMA_HandleTypeDef hdma_adc3;
 
 SPI_HandleTypeDef hspi1;
-SPI_HandleTypeDef hspi3;
-DMA_HandleTypeDef hdma_spi3_tx;
 
 TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
@@ -65,11 +63,6 @@ const uint16_t adc_max = 65535;
 const uint32_t ssi_min = 25000;
 const uint32_t ssi_max = 125000;
 
-/*volatile uint16_t adcBuffer[2][NUM_CONVERSIONS];
-volatile uint8_t adcWriteIndex = 0;
-volatile uint8_t spiReadIndex = 1;
-volatile bool adcBufferReady = false;*/
-
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -81,7 +74,6 @@ static void MX_ADC3_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART1_UART_Init(void);
-static void MX_SPI3_Init(void);
 static void MX_SPI1_Init(void);
 static void MX_TIM1_Init(void);
 /* USER CODE BEGIN PFP */
@@ -93,11 +85,6 @@ static void MX_TIM1_Init(void);
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
 	if (hadc == &hadc3){
 		adcScanCompleted = true;
-
-		/*adcBufferReady = true;
-	    uint8_t tmp = adcWriteIndex;
-	    adcWriteIndex = spiReadIndex;
-	    spiReadIndex = tmp;*/
 	}
 }
 
@@ -106,25 +93,28 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 		/*
 		 * A new ADC scan has just started
 		 */
-		HAL_GPIO_TogglePin(GPIOB, LD3_Pin);
+		//HAL_GPIO_TogglePin(GPIOB, LD3_Pin);
 
 	} else if (htim == &htim1){
 		/*
-		 * We are now in the middle between two SSI CLK burst.
-		 * In main(): load the latest ADC value into buffer for SPI to TX at next burst.
+		 * We are now between two SSI CLK burst.
+		 * In main loop: load the latest ADC value into buffer for SPI to TX at next burst.
 		 * Note that therefore the value being transmitted on the SPI might not be
 		 * the most recent ADC value at the time of transmission
 		 */
 		ssiTxReady = true;
-		CLEAR_BIT(hspi1.Instance->CR1, SPI_CR1_SSI); // Set NSS low, enabling SSI TX
-		HAL_SPI_Abort(&hspi1);
-		HAL_GPIO_TogglePin(GPIOE, LD2_Pin);
+		if (READ_BIT(hspi1.Instance->CR1, SPI_CR1_SSI)){
+			CLEAR_BIT(hspi1.Instance->CR1, SPI_CR1_SSI); // Set NSS low, enabling SSI TX
+		}
+		//HAL_SPI_Abort(&hspi1);
+		//HAL_GPIO_WritePin(GPIOA, GPIO_PIN_6, GPIO_PIN_RESET);
+		//HAL_GPIO_TogglePin(GPIOE, LD2_Pin);
 	}
 }
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
     if (GPIO_Pin == GPIO_PIN_5){
-    	HAL_GPIO_TogglePin(GPIOB, LD1_Pin);
+    	//HAL_GPIO_TogglePin(GPIOB, LD1_Pin);
         __HAL_TIM_SET_COUNTER(&htim1, 0);
     }
 }
@@ -150,7 +140,7 @@ int main(void)
   uint16_t NVIC_cond[NUM_CONVERSIONS];
   uint16_t dequeued[NUM_CONVERSIONS];
   uint8_t UART_TX_package[NUM_CONVERSIONS][3];
-  uint32_t SSI_TX_package[NUM_CONVERSIONS];
+  uint32_t SSI_TX_package;
   /* USER CODE END 1 */
 
   /* MPU Configuration--------------------------------------------------------*/
@@ -179,12 +169,11 @@ int main(void)
   MX_TIM2_Init();
   MX_USART2_UART_Init();
   MX_USART1_UART_Init();
-  MX_SPI3_Init();
   MX_SPI1_Init();
   MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
 
-  htim1.Init.Period = TIM_CLK_FREQ / SSI_FREQ / 2; //Trigger halfway between two SSI CLK bursts
+  htim1.Init.Period = TIM_CLK_FREQ / (SSI_BAUDRATE / 10); //SSI_FREQ / 4; //Trigger one fourth between two SSI CLK bursts
   HAL_TIM_Base_Init(&htim1);
   HAL_TIM_Base_Start_IT(&htim1);
 
@@ -202,7 +191,7 @@ int main(void)
 
   while (1)
   {
-    if (adcScanCompleted){ 				 // UART
+    if (adcScanCompleted){
     	  adcScanCompleted = false;
 
     	for(int i = 0; i < NUM_CONVERSIONS; i++){
@@ -226,19 +215,15 @@ int main(void)
        		HAL_UART_Transmit(&huart2, UART_TX_package[1], 3, HAL_MAX_DELAY);
     	}
     }
-    if (ssiTxReady){ 					 //SSI
+    if (ssiTxReady){
    			ssiTxReady = false;
-
-   	    	for(int i = 0; i < NUM_CONVERSIONS; i++){
-   	    		float LDT_cond = ssi_min + scan[i] * (ssi_max - ssi_min) / adc_max;
-   	    		SSI_TX_package[i] = (uint32_t)LDT_cond;
-   	    		SSI_TX_package[i] = SSI_TX_package[i] << 8;
-   	    	}
-			HAL_SPI_Transmit_DMA(&hspi1, (uint8_t*)&SSI_TX_package[0], 5);
-			HAL_SPI_Transmit_DMA(&hspi3, (uint8_t*)&SSI_TX_package[1], 5);
+   	    	uint32_t LDT_cond = ssi_min + scan[0] * (ssi_max - ssi_min) / adc_max;
+   	    	SSI_TX_package = LDT_cond;
+   	    	HAL_SPI_Transmit(&hspi1, (uint8_t *)&SSI_TX_package, 1, HAL_MAX_DELAY);
     }
-    /* USER CODE END WHILE */
   }
+    /* USER CODE END WHILE */
+
     /* USER CODE BEGIN 3 */
   /* USER CODE END 3 */
 }
@@ -393,7 +378,7 @@ static void MX_SPI1_Init(void)
   hspi1.Instance = SPI1;
   hspi1.Init.Mode = SPI_MODE_SLAVE;
   hspi1.Init.Direction = SPI_DIRECTION_2LINES_TXONLY;
-  hspi1.Init.DataSize = SPI_DATASIZE_5BIT;
+  hspi1.Init.DataSize = SPI_DATASIZE_25BIT;
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
@@ -418,53 +403,6 @@ static void MX_SPI1_Init(void)
   /* USER CODE BEGIN SPI1_Init 2 */
   SET_BIT(hspi1.Instance->CR1, SPI_CR1_SSI); // Set NSS register high, disabling SSI TX
   /* USER CODE END SPI1_Init 2 */
-
-}
-
-/**
-  * @brief SPI3 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_SPI3_Init(void)
-{
-
-  /* USER CODE BEGIN SPI3_Init 0 */
-
-  /* USER CODE END SPI3_Init 0 */
-
-  /* USER CODE BEGIN SPI3_Init 1 */
-
-  /* USER CODE END SPI3_Init 1 */
-  /* SPI3 parameter configuration*/
-  hspi3.Instance = SPI3;
-  hspi3.Init.Mode = SPI_MODE_SLAVE;
-  hspi3.Init.Direction = SPI_DIRECTION_2LINES_TXONLY;
-  hspi3.Init.DataSize = SPI_DATASIZE_4BIT;
-  hspi3.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi3.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi3.Init.NSS = SPI_NSS_SOFT;
-  hspi3.Init.FirstBit = SPI_FIRSTBIT_MSB;
-  hspi3.Init.TIMode = SPI_TIMODE_DISABLE;
-  hspi3.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-  hspi3.Init.CRCPolynomial = 0x0;
-  hspi3.Init.NSSPMode = SPI_NSS_PULSE_DISABLE;
-  hspi3.Init.NSSPolarity = SPI_NSS_POLARITY_LOW;
-  hspi3.Init.FifoThreshold = SPI_FIFO_THRESHOLD_01DATA;
-  hspi3.Init.TxCRCInitializationPattern = SPI_CRC_INITIALIZATION_ALL_ZERO_PATTERN;
-  hspi3.Init.RxCRCInitializationPattern = SPI_CRC_INITIALIZATION_ALL_ZERO_PATTERN;
-  hspi3.Init.MasterSSIdleness = SPI_MASTER_SS_IDLENESS_00CYCLE;
-  hspi3.Init.MasterInterDataIdleness = SPI_MASTER_INTERDATA_IDLENESS_00CYCLE;
-  hspi3.Init.MasterReceiverAutoSusp = SPI_MASTER_RX_AUTOSUSP_DISABLE;
-  hspi3.Init.MasterKeepIOState = SPI_MASTER_KEEP_IO_STATE_DISABLE;
-  hspi3.Init.IOSwap = SPI_IO_SWAP_DISABLE;
-  if (HAL_SPI_Init(&hspi3) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN SPI3_Init 2 */
-
-  /* USER CODE END SPI3_Init 2 */
 
 }
 
@@ -669,9 +607,6 @@ static void MX_DMA_Init(void)
   /* DMA1_Stream0_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
-  /* DMA1_Stream2_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA1_Stream2_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(DMA1_Stream2_IRQn);
 
 }
 
@@ -712,7 +647,7 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin : PB5 */
   GPIO_InitStruct.Pin = GPIO_PIN_5;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_PULLDOWN;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pin : LD2_Pin */
