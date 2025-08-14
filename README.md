@@ -1,2 +1,3 @@
 **Bass Summer Intern Project 2025**
-Sondre Hauk Heier Holte
+
+Intern: Sondre Hauk Heier Holte
